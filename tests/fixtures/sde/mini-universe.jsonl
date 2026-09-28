@@ -1,0 +1,4 @@
+{"kind":"region","id":10000043,"name":"Domain"}
+{"kind":"constellation","id":20000314,"name":"Throne Worlds","regionId":10000043}
+{"kind":"system","id":30002187,"name":"Amarr","constellationId":20000314,"regionId":10000043,"position":[10,20,30]}
+{"kind":"star","id":40001428,"systemId":30002187,"typeId":45030,"radius":1004000000,"spectralClass":"K2 V"}

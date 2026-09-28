@@ -1,0 +1,6 @@
+{
+  "build": "3503375",
+  "source": "https://developers.eveonline.com/static-data/tranquility/eve-online-static-data-3503375-jsonl.zip",
+  "format": "JSON Lines",
+  "licenseNotice": "EVE Online and all associated data are the property of CCP hf. This project is not endorsed by or affiliated with CCP."
+}

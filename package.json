@@ -1,0 +1,56 @@
+{
+  "name": "starframe",
+  "description": "An interactive map of New Eden built from official EVE Online static data.",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": "Ilya Chistyakov",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MyGodIsHe/starframe.git"
+  },
+  "homepage": "https://mygodishe.github.io/starframe/",
+  "bugs": {
+    "url": "https://github.com/MyGodIsHe/starframe/issues"
+  },
+  "engines": {
+    "node": "^24.0.0",
+    "npm": ">=11"
+  },
+  "packageManager": "npm@11.12.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "generate:sde": "tsx scripts/generate-sde.ts",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@react-three/fiber": "^9.3.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^24.3.1",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@types/three": "^0.180.0",
+    "@vitejs/plugin-react": "^5.0.2",
+    "eslint": "^10.0.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.2",
+    "typescript-eslint": "^8.71.0",
+    "vite": "^7.1.5",
+    "vitest": "^5.0.2"
+  }
+}

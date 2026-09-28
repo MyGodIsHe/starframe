@@ -1,0 +1,30 @@
+node_modules/
+dist/
+playwright-report/
+test-results/
+coverage/
+.vite/
+.eslintcache
+*.tsbuildinfo
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.idea/
+.vscode/
+.vs/
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+
+# Local agent workspace
+.claude/
+.scratch/
+AGENTS.md
+backlog.md
+docs/agents/

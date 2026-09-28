@@ -1,0 +1,71 @@
+:root {
+  background: #020307;
+  color: #e8edf5;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; min-width: 320px; }
+
+.star-map { min-height: 100dvh; overflow: hidden; position: relative; }
+
+.scene-viewport { height: 100dvh; position: relative; touch-action: none; width: 100%; }
+
+.scene-viewport canvas { display: block; height: 100%; outline: none; width: 100%; }
+.scene-viewport[data-gate-hitbox-hovered] canvas { cursor: pointer; }
+
+.scene-input { cursor: grab; inset: 0; pointer-events: none; position: absolute; touch-action: none; z-index: 1; }
+.scene-input:active { cursor: grabbing; }
+
+.stargates { inset: 0; pointer-events: none; position: absolute; z-index: 1; }
+.stargate-marker { align-items: center; background: none; border: 0; color: #d9ecff; cursor: pointer; display: flex; flex-direction: column; font: inherit; gap: 0.25rem; left: 0; opacity: 0; padding: 0.45rem; pointer-events: none; position: absolute; top: 0; transform: translate(-50%, -50%); }
+.stargate-marker__label { display: none; }
+.stargate-marker[data-active] .stargate-marker__label, .stargate-marker:hover .stargate-marker__label { box-shadow: 0 0 1.1rem rgb(255 191 93 / 76%); color: #ffe0a1; }
+.stargate-marker:focus-visible { outline: 2px solid #ffe0a1; outline-offset: 0.2rem; }
+.travel-error { background: rgb(70 20 18 / 88%); border-left: 1px solid #ee9d83; bottom: 4rem; color: #ffe5db; font-size: 0.75rem; left: clamp(1rem, 3vw, 3rem); padding: 0.7rem 0.9rem; position: absolute; width: min(22rem, 70vw); }
+.travel-error p { margin: 0 0 0.5rem; }
+.travel-error button { background: #ffe0a1; border: 0; color: #231308; cursor: pointer; font: inherit; padding: 0.35rem 0.55rem; }
+
+.system-hud { left: clamp(1.25rem, 4vw, 4rem); pointer-events: none; position: absolute; top: clamp(1.25rem, 4vw, 3.5rem); z-index: 1; }
+
+.system-hud h1 { font-family: Georgia, serif; font-size: clamp(2rem, 4vw, 3.8rem); font-weight: 400; letter-spacing: 0.04em; margin: 0; }
+.system-hud p { color: #9caabd; font-size: 0.72rem; letter-spacing: 0.16em; margin: 0.35rem 0 0; text-transform: uppercase; }
+.system-hud .eyebrow { color: #d5a462; }
+.system-hud .star-details { color: #c8d3e2; font-size: 0.65rem; letter-spacing: 0.1em; }
+
+.physical-scale { background: rgb(6 12 22 / 72%); border-left: 1px solid #6e9cc8; margin: 0; padding: 0.6rem 0.8rem; position: absolute; right: clamp(1rem, 3vw, 3rem); top: clamp(1.25rem, 4vw, 3.5rem); width: min(18rem, 46vw); }
+.physical-scale p { color: #aebed1; font-size: 0.67rem; letter-spacing: 0.06em; line-height: 1.4; margin: 0.2rem 0; }
+.physical-scale p:first-child { color: #d5a462; font-size: 0.65rem; letter-spacing: 0.14em; text-transform: uppercase; }
+
+.constellation-symbol { background: rgb(6 12 22 / 72%); border-left: 1px solid #728eae; bottom: 4rem; left: clamp(1rem, 3vw, 3rem); margin: 0; padding: 0.6rem 0.8rem; position: absolute; width: min(17rem, 45vw); }
+.constellation-symbol p { color: #aebed1; font-size: 0.67rem; letter-spacing: 0.06em; line-height: 1.4; margin: 0.2rem 0; }
+.constellation-symbol p:first-child { color: #d8e7f8; font-size: 0.78rem; }
+.constellation-symbol p:nth-child(2) { color: #d5a462; text-transform: uppercase; }
+
+.interaction-hint { bottom: 1.5rem; color: #8190a5; font-size: 0.75rem; left: 50%; letter-spacing: 0.05em; margin: 0; pointer-events: none; position: absolute; text-transform: uppercase; transform: translateX(-50%); white-space: nowrap; }
+.data-attribution { bottom: 1.5rem; color: #627085; font-size: 0.6rem; margin: 0; position: absolute; right: clamp(1rem, 3vw, 3rem); text-align: right; width: min(25rem, 45vw); }
+
+.screen-reader-status, .screen-reader-only { height: 1px; overflow: hidden; position: absolute; width: 1px; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.planet-controls:focus-within { background: rgb(6 12 22 / 92%); clip: auto; clip-path: none; height: auto; overflow: visible; padding: 0.5rem; right: clamp(1rem, 3vw, 3rem); top: 1rem; width: auto; z-index: 2; }
+.planet-controls button:focus-visible { outline: 2px solid #ffe0a1; outline-offset: 0.2rem; }
+.planet-details { background: rgb(6 12 22 / 82%); border-left: 1px solid #6e9cc8; bottom: 4rem; margin: 0; padding: 0.65rem 0.85rem; position: absolute; right: clamp(1rem, 3vw, 3rem); width: min(17rem, 45vw); }
+.planet-details p { color: #c9d8e8; font-size: 0.7rem; letter-spacing: 0.06em; margin: 0.2rem 0; text-transform: uppercase; }
+.planet-details p:first-child { color: #f0f6ff; font-size: 0.82rem; }
+.route-preview { animation: route-preview-enter 180ms ease-out; background: rgb(6 12 22 / 82%); border-left: 1px solid #d5a462; margin: 0; padding: 0.65rem 0.85rem; position: absolute; right: clamp(1rem, 3vw, 3rem); top: clamp(1.25rem, 4vw, 3.5rem); width: min(17rem, 45vw); }
+.route-preview p { color: #d5a462; font-size: 0.65rem; letter-spacing: 0.14em; margin: 0 0 0.45rem; text-transform: uppercase; }
+.route-preview ol { color: #d9ecff; font-size: 0.72rem; letter-spacing: 0.06em; line-height: 1.7; margin: 0; padding-left: 1.3rem; }
+.route-preview[data-leaving] { animation: route-preview-leave 180ms ease-in forwards; }
+@keyframes route-preview-enter { from { opacity: 0; transform: translateY(-0.4rem); } to { opacity: 1; transform: translateY(0); } }
+@keyframes route-preview-leave { to { opacity: 0; transform: translateY(-0.4rem); } }
+@media (prefers-reduced-motion: reduce) { .route-preview, .route-preview[data-leaving] { animation: none; } }
+
+.loading, .scene-error { align-items: center; background: #020307; color: #e8edf5; display: flex; flex-direction: column; justify-content: center; min-height: 100dvh; padding: 2rem; text-align: center; }
+.scene-error h1 { font-family: Georgia, serif; font-weight: 400; }
+.scene-error p { color: #aeb9c8; max-width: 32rem; }
+
+@media (max-width: 600px) {
+  .system-hud { top: 1.5rem; }
+  .interaction-hint { bottom: 1rem; font-size: 0.65rem; }
+  .data-attribution { bottom: 2.25rem; font-size: 0.55rem; width: 16rem; }
+}
