@@ -402,6 +402,7 @@ test("shows a jump preview when hovering a gate after a transition", async ({ pa
   await page.goto("/");
   await page.getByRole("button", { name: "Stargate to Ashab" }).click();
   await expect(page.getByRole("heading", { name: "Ashab" })).toBeVisible();
+  await expect(page.getByRole("application")).not.toHaveAttribute("data-travel-phase");
 
   const nextGate = page.getByRole("button", { name: /^Stargate to / }).first();
   await nextGate.hover();
