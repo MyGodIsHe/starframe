@@ -31,7 +31,7 @@ type GlyphNodes = {
 
 type GlyphRenderState = {
   buckets: GlyphLineBucket[];
-  edgeCapacity: number;
+  strokeCapacity: number;
   nodes: GlyphNodes;
   nodeCapacity: number;
 };
@@ -100,11 +100,11 @@ export function ConstellationGlyphs({ index, activeSystemId, travel, glyphs, qua
 }
 
 function createRenderState(profile: RenderQuality["name"], glyphs: readonly ConstellationGlyph[]): GlyphRenderState {
-  const edgeCapacity = Math.max(1, glyphs.reduce((total, glyph) => total + glyph.edges.length, 0));
+  const strokeCapacity = Math.max(1, glyphs.reduce((total, glyph) => total + glyph.strokes.length, 0));
   const nodeCapacity = Math.max(1, glyphs.reduce((total, glyph) => total + glyph.nodes.length, 0));
   const state = {
-    buckets: createLineBuckets(profile, edgeCapacity),
-    edgeCapacity,
+    buckets: createLineBuckets(profile, strokeCapacity),
+    strokeCapacity,
     nodes: createNodePoints(nodeCapacity),
     nodeCapacity,
   };
@@ -112,13 +112,19 @@ function createRenderState(profile: RenderQuality["name"], glyphs: readonly Cons
   return state;
 }
 
-function createLineBuckets(profile: RenderQuality["name"], capacity: number): GlyphLineBucket[] {
-  const coreWidths = profile === "mobile" ? [0.5, 0.8, 1.15] : [0.65, 1.05, 1.5];
-  const haloWidths = profile === "mobile" ? [1.8, 2.3, 2.7] : [2.4, 3, 3.5];
-  const coreOpacities = [0.48, 0.68, 0.9];
-  const haloOpacities = [0.18, 0.14, 0.1];
+// Three depth buckets for the figure, then one for the lead lines that tie each real Solar System
+// to it. The lead bucket is thinner and barely haloed on purpose: a tie is bookkeeping, and it must
+// never compete with either the artwork or the stars themselves.
+const BUCKET_COUNT = 4;
+const ORNAMENT_BUCKET = 3;
 
-  return Array.from({ length: 3 }, (_, bucket) => createLineBucket(
+function createLineBuckets(profile: RenderQuality["name"], capacity: number): GlyphLineBucket[] {
+  const coreWidths = profile === "mobile" ? [0.5, 0.8, 1.15, 0.42] : [0.65, 1.05, 1.5, 0.55];
+  const haloWidths = profile === "mobile" ? [1.8, 2.3, 2.7, 1.2] : [2.4, 3, 3.5, 1.6];
+  const coreOpacities = [0.48, 0.68, 0.9, 0.34];
+  const haloOpacities = [0.18, 0.14, 0.1, 0.05];
+
+  return Array.from({ length: BUCKET_COUNT }, (_, bucket) => createLineBucket(
     capacity,
     haloWidths[bucket],
     coreWidths[bucket],
@@ -206,24 +212,25 @@ function createNodePoints(capacity: number): GlyphNodes {
 
 function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: GlyphRenderState, profile: RenderQuality["name"]): void {
   ensureCapacity(state, glyphs);
-  const edgeCounts = [0, 0, 0];
+  const strokeCounts = [0, 0, 0, 0];
   let nodeCount = 0;
 
   for (const glyph of glyphs) {
-    for (const edge of glyph.edges) {
-      if (edge.opacity <= 0.001) continue;
-      const bucketIndex = Math.min(2, Math.floor(edge.proximity * 3));
+    for (const stroke of glyph.strokes) {
+      if (stroke.opacity <= 0.001) continue;
+      const isOrnament = stroke.kind === "lead";
+      const bucketIndex = isOrnament ? ORNAMENT_BUCKET : Math.min(2, Math.floor(stroke.proximity * 3));
       const bucket = state.buckets[bucketIndex];
-      const edgeIndex = edgeCounts[bucketIndex];
-      const offset = edgeIndex * 6;
-      bucket.positions.set(edge.from, offset);
-      bucket.positions.set(edge.to, offset + 3);
-      writeGlyphColor(bucket.colors, offset, edge.proximity);
-      writeGlyphColor(bucket.colors, offset + 3, edge.proximity);
-      const intensity = edge.opacity * (0.38 + edge.proximity * 0.62);
-      bucket.opacityStart.setX(edgeIndex, intensity);
-      bucket.opacityEnd.setX(edgeIndex, intensity);
-      edgeCounts[bucketIndex] += 1;
+      const strokeIndex = strokeCounts[bucketIndex];
+      const offset = strokeIndex * 6;
+      bucket.positions.set(stroke.from, offset);
+      bucket.positions.set(stroke.to, offset + 3);
+      writeGlyphColor(bucket.colors, offset, stroke.proximity, isOrnament);
+      writeGlyphColor(bucket.colors, offset + 3, stroke.proximity, isOrnament);
+      const intensity = stroke.opacity * (isOrnament ? 0.26 + stroke.proximity * 0.3 : 0.38 + stroke.proximity * 0.62);
+      bucket.opacityStart.setX(strokeIndex, intensity);
+      bucket.opacityEnd.setX(strokeIndex, intensity);
+      strokeCounts[bucketIndex] += 1;
     }
 
     for (const node of glyph.nodes) {
@@ -237,9 +244,9 @@ function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: Glyph
     }
   }
 
-  for (let bucketIndex = 0; bucketIndex < 3; bucketIndex += 1) {
+  for (let bucketIndex = 0; bucketIndex < BUCKET_COUNT; bucketIndex += 1) {
     const bucket = state.buckets[bucketIndex];
-    bucket.geometry.instanceCount = edgeCounts[bucketIndex];
+    bucket.geometry.instanceCount = strokeCounts[bucketIndex];
     interleavedData(bucket.geometry, "instanceStart").needsUpdate = true;
     interleavedData(bucket.geometry, "instanceColorStart").needsUpdate = true;
     bucket.opacityStart.needsUpdate = true;
@@ -251,11 +258,11 @@ function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: Glyph
 }
 
 function ensureCapacity(state: GlyphRenderState, glyphs: readonly ConstellationGlyph[]): void {
-  const edgeCount = glyphs.reduce((total, glyph) => total + glyph.edges.length, 0);
-  if (edgeCount > state.edgeCapacity) {
-    const nextCapacity = Math.max(edgeCount, state.edgeCapacity * 2);
+  const strokeCount = glyphs.reduce((total, glyph) => total + glyph.strokes.length, 0);
+  if (strokeCount > state.strokeCapacity) {
+    const nextCapacity = Math.max(strokeCount, state.strokeCapacity * 2);
     for (const bucket of state.buckets) resizeLineBucket(bucket, nextCapacity);
-    state.edgeCapacity = nextCapacity;
+    state.strokeCapacity = nextCapacity;
   }
 
   const nodeCount = glyphs.reduce((total, glyph) => total + glyph.nodes.length, 0);
@@ -293,10 +300,17 @@ function resizeNodes(nodes: GlyphNodes, capacity: number): void {
   nodes.object.geometry.setAttribute("size", new BufferAttribute(nodes.sizes, 1).setUsage(DynamicDrawUsage));
 }
 
-function writeGlyphColor(target: Float32Array, offset: number, proximity: number): void {
-  target[offset] = (98 + (85 - 98) * proximity) / 255;
-  target[offset + 1] = (91 + (223 - 91) * proximity) / 255;
-  target[offset + 2] = (220 + (255 - 220) * proximity) / 255;
+function writeGlyphColor(target: Float32Array, offset: number, proximity: number, isOrnament = false): void {
+  const red = 98 + (85 - 98) * proximity;
+  const green = 91 + (223 - 91) * proximity;
+  const blue = 220 + (255 - 220) * proximity;
+  // A lead line shares the depth ramp but sits closer to mid-grey, so it reads as a faint tie
+  // rather than as part of the drawing.
+  const mix = isOrnament ? 0.45 : 0;
+  const grey = (red + green + blue) / 3;
+  target[offset] = (red + (grey - red) * mix) / 255;
+  target[offset + 1] = (green + (grey - green) * mix) / 255;
+  target[offset + 2] = (blue + (grey - blue) * mix) / 255;
 }
 
 function interleavedData(geometry: LineSegmentsGeometry, attribute: string): InterleavedBufferAttribute["data"] {

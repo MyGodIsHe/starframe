@@ -23,16 +23,44 @@ A camera-centred projection of every New Eden Solar System onto the distant cele
 _Avoid_: local-system object, decorative background star
 
 **Constellation Glyph**:
-A holographic frame whose nodes are a Constellation's real Solar Systems and whose edges are the wireframe convex hull of their real 3D positions - the outer visible-face edges only, with triangulation diagonals across flat faces removed, and any interior Solar Systems left as unconnected nodes. Stargates select which Constellations are visible but never define glyph edges.
-_Avoid_: Stargate graph, authored constellation symbol, enclosing volume, nearest-neighbour or minimum-spanning-tree edges, triangulation diagonals on a flat face
+A holographic sigil in a Constellation's Glyph Chart: the Sigil Figure its Sigil Motif names, placed so the figure's anchors fall on the Constellation's real Solar Systems, with a Glyph Lead tying in every system the figure did not reach. The figure is authored art, as in a star atlas, so the lines are not derived from the positions - the placement is. Stargates select nothing and define no line.
+_Avoid_: Stargate graph, convex hull wireframe, a polygon drawn through the Solar Systems, enclosing volume, unconnected Solar System, partial glyph
+
+**Glyph Chart**:
+The flat sky plane a Constellation Glyph is drawn in: the gnomonic projection of its Solar System directions onto the plane tangent at their mean direction, normalised so the farthest of them sits on the unit circle, and oriented by the galactic axis so the sigil never rolls as the observer moves. The observer sits at the centre of the Celestial Map sphere, so a glyph has no parallax of its own and this plane is literally what is seen.
+_Avoid_: screen space, the Constellation's physical plane, a per-frame fitted orientation
+
+**Glyph Footprint**:
+The spherical cap a Constellation occupies on the sky: the direction of the mean of its Solar System directions, and the angular radius reaching the farthest of them. A Sigil Figure is drawn out to a fixed multiple of that radius, and it is the larger drawn extent that Glyph Occlusion reserves.
+_Avoid_: screen bounding box, a radius in metres, the physical size of the Constellation
+
+**Glyph Occlusion**:
+The rule that decides which glyphs are drawn. Constellations are taken nearest first, by the distance to their closest Solar System, and one is kept only when its drawn extent clears every already-kept glyph's drawn extent with room to spare. A Constellation blocked by something in front of it is dropped whole. The Constellation the observer stands in surrounds them rather than occupying a patch of sky, so it is always drawn and never claims room.
+_Avoid_: hiding individual stars, trimming a glyph, a depth buffer, selection by Stargate connectivity or by a fixed radius
+
+**Legibility Floor**:
+The smallest Glyph Footprint radius still worth drawing. A Constellation below it cannot be read as a figure at any camera zoom, so it is left out rather than added as clutter.
+_Avoid_: culling by distance, keeping a fixed top-N, fading small glyphs in and out
+
+**Glyph Integrity**:
+A Constellation Glyph is shown whole or not at all: opacity belongs to the glyph, not to its nodes, its figure or its leads. The single exception is the Solar System the observer is standing inside, which has no direction in the sky and hands off to the Solar System Map as the observer approaches it.
+_Avoid_: fading one node, hiding one star behind another, a glyph missing its far side
+
+**Sigil Figure**:
+One piece of authored line art from the shared library - a crown, a wolf, a vessel - with named anchors on its most characteristic extremities, where real Solar Systems are meant to land. A figure has an inherent upright and is only ever tilted slightly, because a crown lying on its side stops being a crown.
+_Avoid_: a shape derived from Solar System positions, a figure generated per Constellation, free rotation, a silhouette that needs fill or colour to read
+
+**Sigil Motif**:
+Which Sigil Figure a Constellation wears, chosen from its real name and Region, together with the caption naming the idea.
+_Avoid_: a randomly picked figure, one figure shared by a whole Region, a choice that changes between sessions
+
+**Glyph Lead**:
+The short tie drawn from a real Solar System to the nearest point of its Sigil Figure, for any system an anchor did not reach. It is thinner, quieter and less saturated than the figure, and it never stands for a Stargate link.
+_Avoid_: an invented Solar System, a fabricated Stargate link, a lead as bright as the figure
 
 **Glyph Depth Cue**:
-The relative sharpness, brightness, width, and colour of a Constellation Glyph edge. Edges physically nearer to the observer are sharper cyan and overlap thinner violet distant edges.
-_Avoid_: physical edge thickness, bloom-heavy solid object
-
-**Adjacent Constellation Glyph**:
-A Constellation Glyph for a Constellation reached by at least one Stargate from the active Constellation.
-_Avoid_: geometrically nearest constellation, arbitrary nearby marker
+The relative sharpness, brightness, width, and colour of a Constellation Glyph stroke. Strokes physically nearer to the observer are sharper cyan and overlap thinner violet distant ones; a Sigil Figure's strokes inherit the depth of the Solar Systems they run past. The same depth also sets the order Glyph Occlusion works in.
+_Avoid_: physical edge thickness, bloom-heavy solid object, a depth invented for artwork
 
 **Jump Preview Tree**:
 The deduplicated breadth-first tree of up to three Stargate jumps that begins with the Stargate under hover or focus, rendered as arcs on the Celestial Map.
