@@ -127,9 +127,7 @@ describe("Glyph Occlusion", () => {
       const ids = projectConstellationGlyphs(index, observer.id)
         .map((glyph) => glyph.constellationId)
         .filter((constellationId) => constellationId !== observer.constellationId);
-      const footprints = ids.map((constellationId) =>
-        computeGlyphFootprint(constellationId, index.systemsByConstellation.get(constellationId)!, observer.position, new Set<number>())!,
-      );
+      const footprints = ids.map((constellationId) => computeGlyphFootprint(index.boundsByConstellation.get(constellationId)!, observer.position)!);
 
       for (let left = 0; left < footprints.length; left += 1) {
         for (let right = left + 1; right < footprints.length; right += 1) {
@@ -160,6 +158,54 @@ describe("Glyph Occlusion", () => {
   });
 });
 
+describe("Glyph Shape stability", () => {
+  // The failure this guards against: the figure used to be refitted in the observer's sky plane
+  // every frame, so mid-flight the anchor-to-star matching would flip and the artwork visibly
+  // redrew itself onto different systems. A glyph fixed in space can only turn.
+  it("turns a glyph as the observer travels past it, instead of redrawing it", () => {
+    const index = compileConstellationGlyphIndex(UNIVERSE_SYSTEMS);
+    const origin = UNIVERSE_SYSTEMS[0];
+    const destination = [...UNIVERSE_SYSTEMS]
+      .filter((system) => system.constellationId !== origin.constellationId)
+      .sort((left, right) => distanceBetween(origin.position, left.position) - distanceBetween(origin.position, right.position))[0];
+    const travel = {
+      originSystemId: origin.id,
+      destinationSystemId: destination.id,
+      routeDirection: destination.position,
+      phase: "accelerating" as const,
+      startedAt: 0,
+    };
+
+    const frames = Array.from({ length: 41 }, (_, step) =>
+      projectTravelConstellationGlyphs(index, origin.id, travel, (step / 40) * 5_200),
+    );
+    const everywhere = frames[0]
+      .map((glyph) => glyph.constellationId)
+      .filter((constellationId) => frames.every((frame) => frame.some((glyph) => glyph.constellationId === constellationId)));
+    expect(everywhere.length).toBeGreaterThan(0);
+
+    for (const constellationId of everywhere) {
+      let previous: [number, number, number][] | null = null;
+      for (const frame of frames) {
+        const current = frame
+          .find((glyph) => glyph.constellationId === constellationId)!
+          .strokes.filter((stroke) => stroke.kind === "figure")
+          .map((stroke) => stroke.from);
+
+        if (previous && previous.length > 0 && current.length > 0) {
+          // Each point of the drawing stays near a point of the previous frame's drawing. A refit
+          // would tear the figure across the sky in a single step.
+          for (const point of current) {
+            const nearest = Math.min(...previous.map((earlier) => angleBetween(point, earlier)));
+            expect(nearest).toBeLessThan(0.12);
+          }
+        }
+        previous = current;
+      }
+    }
+  });
+});
+
 describe("Glyph Integrity", () => {
   it("gives every node of a glyph the glyph's own opacity, with no per-star hiding", () => {
     const index = compileConstellationGlyphIndex(UNIVERSE_SYSTEMS);
@@ -187,3 +233,14 @@ describe("Glyph Integrity", () => {
     }
   });
 });
+
+function distanceBetween(left: readonly number[], right: readonly number[]): number {
+  return Math.hypot(left[0] - right[0], left[1] - right[1], left[2] - right[2]);
+}
+
+function angleBetween(left: readonly number[], right: readonly number[]): number {
+  const leftLength = Math.hypot(left[0], left[1], left[2]) || 1;
+  const rightLength = Math.hypot(right[0], right[1], right[2]) || 1;
+  const cos = (left[0] * right[0] + left[1] * right[1] + left[2] * right[2]) / (leftLength * rightLength);
+  return Math.acos(Math.max(-1, Math.min(1, cos)));
+}

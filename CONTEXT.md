@@ -23,12 +23,16 @@ A camera-centred projection of every New Eden Solar System onto the distant cele
 _Avoid_: local-system object, decorative background star
 
 **Constellation Glyph**:
-A holographic sigil in a Constellation's Glyph Chart: the Sigil Figure its Sigil Motif names, placed so the figure's anchors fall on the Constellation's real Solar Systems, with a Glyph Lead tying in every system the figure did not reach. The figure is authored art, as in a star atlas, so the lines are not derived from the positions - the placement is. Stargates select nothing and define no line.
+A holographic sigil standing in space where its Constellation is: the Sigil Figure its Sigil Motif names, laid out in the Glyph Frame so the figure's anchors fall on the real Solar Systems, with a Glyph Lead tying in every system the figure did not reach. The figure is authored art, as in a star atlas, so the lines are not derived from the positions - the placement is. Stargates select nothing and define no line.
 _Avoid_: Stargate graph, convex hull wireframe, a polygon drawn through the Solar Systems, enclosing volume, unconnected Solar System, partial glyph
 
-**Glyph Chart**:
-The flat sky plane a Constellation Glyph is drawn in: the gnomonic projection of its Solar System directions onto the plane tangent at their mean direction, normalised so the farthest of them sits on the unit circle, and oriented by the galactic axis so the sigil never rolls as the observer moves. The observer sits at the centre of the Celestial Map sphere, so a glyph has no parallax of its own and this plane is literally what is seen.
-_Avoid_: screen space, the Constellation's physical plane, a per-frame fitted orientation
+**Glyph Frame**:
+The Constellation's own coordinate frame, built once from the SDE build and never from an observer: the centre of its Solar Systems, the plane they most nearly lie in, and the galactic vertical laid into that plane as up. A glyph is laid out here and then stays put, so travel turns it rather than redrawing it, and its relief comes from how far its Solar Systems really sit off that plane.
+_Avoid_: the observer's sky plane, a per-frame fitted orientation, a plane chosen to face the camera
+
+**Glyph Parallax**:
+What a pilot gets from a glyph being a fixed object: moving through New Eden shows it from another side, foreshortened or face on, without any of its geometry changing. A glyph seen nearly edge on reads as a sliver, and that is the honest view of a thing with volume.
+_Avoid_: re-fitting a glyph to the current viewpoint, turning a glyph to face the camera, parallax within one stationary view
 
 **Glyph Footprint**:
 The spherical cap a Constellation occupies on the sky: the direction of the mean of its Solar System directions, and the angular radius reaching the farthest of them. A Sigil Figure is drawn out to a fixed multiple of that radius, and it is the larger drawn extent that Glyph Occlusion reserves.
@@ -47,8 +51,8 @@ A Constellation Glyph is shown whole or not at all: opacity belongs to the glyph
 _Avoid_: fading one node, hiding one star behind another, a glyph missing its far side
 
 **Sigil Figure**:
-One piece of authored line art from the shared library - a crown, a wolf, a vessel - with named anchors on its most characteristic extremities, where real Solar Systems are meant to land. A figure has an inherent upright and is only ever tilted slightly, because a crown lying on its side stops being a crown.
-_Avoid_: a shape derived from Solar System positions, a figure generated per Constellation, free rotation, a silhouette that needs fill or colour to read
+One piece of authored line art from the shared library - a crown, a wolf, a vessel - with named anchors on its most characteristic extremities, where real Solar Systems are meant to land. A figure has an inherent upright and is only ever tilted slightly within its Glyph Frame, because a crown lying on its side stops being a crown.
+_Avoid_: a shape derived from Solar System positions, a figure generated per Constellation, free rotation within the frame, a silhouette that needs fill or colour to read
 
 **Sigil Motif**:
 Which Sigil Figure a Constellation wears, chosen from its real name and Region, together with the caption naming the idea.

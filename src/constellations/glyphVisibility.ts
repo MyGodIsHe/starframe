@@ -1,12 +1,16 @@
 import type { Vector3 } from "../universe/generateUniverse";
 
-type FootprintSystem = {
-  id: number;
-  position: Vector3;
+// What a Constellation Glyph occupies in space, computed once from the SDE build: the centre of a
+// sphere enclosing everything the glyph draws - its Solar Systems and its figure alike - and that
+// sphere's radius. Bounding the artwork rather than the bare star cloud is what lets Glyph
+// Occlusion promise that two drawn glyphs never overlap.
+export type GlyphBounds = {
+  constellationId: number;
+  centre: Vector3;
+  radius: number;
 };
 
-// The sky region a constellation occupies, as a spherical cap: a unit direction towards the mean of
-// its Solar System directions, plus the angular radius that reaches the farthest of them.
+// The sky region that sphere covers, seen from one observer.
 export type GlyphFootprint = {
   constellationId: number;
   center: Vector3;
@@ -22,69 +26,50 @@ export const LEGIBILITY_FLOOR_RADIANS = (8 * Math.PI) / 180;
 // Clear sky kept between two drawn glyphs, on top of their own radii.
 export const GLYPH_SEPARATION_RADIANS = (3 * Math.PI) / 180;
 
-// A glyph's ornament reaches past its member Solar Systems by this factor of the footprint radius,
-// so occlusion has to reserve the larger, drawn extent rather than the bare star cloud.
-export const ORNAMENT_EXTENT = 1.35;
+export function boundsOf(constellationId: number, points: readonly Vector3[]): GlyphBounds | null {
+  if (points.length === 0) return null;
 
-export function computeGlyphFootprint(
-  constellationId: number,
-  systems: readonly FootprintSystem[],
-  observerPosition: Vector3,
-  excludedSystemIds: ReadonlySet<number>,
-): GlyphFootprint | null {
-  const directions: Vector3[] = [];
-  let sumX = 0;
-  let sumY = 0;
-  let sumZ = 0;
-  let nearestDistance = Infinity;
-
-  for (const system of systems) {
-    if (excludedSystemIds.has(system.id)) continue;
-    const dx = system.position[0] - observerPosition[0];
-    const dy = system.position[1] - observerPosition[1];
-    const dz = system.position[2] - observerPosition[2];
-    const distance = Math.hypot(dx, dy, dz);
-    if (distance === 0) continue;
-    const direction: Vector3 = [dx / distance, dy / distance, dz / distance];
-    directions.push(direction);
-    sumX += direction[0];
-    sumY += direction[1];
-    sumZ += direction[2];
-    if (distance < nearestDistance) nearestDistance = distance;
-  }
-
-  if (directions.length < 2) return null;
-
-  const meanLength = Math.hypot(sumX, sumY, sumZ);
-  // Directions that cancel out exactly have no meaningful cap centre; the observer is effectively
-  // surrounded by the constellation, which is the home-constellation case handled by the caller.
-  if (meanLength === 0) return null;
-  const center: Vector3 = [sumX / meanLength, sumY / meanLength, sumZ / meanLength];
+  const centre: Vector3 = [0, 0, 0];
+  for (const point of points) for (let axis = 0; axis < 3; axis += 1) centre[axis] += point[axis] / points.length;
 
   let radius = 0;
-  for (const direction of directions) {
-    const cos = Math.max(-1, Math.min(1, direction[0] * center[0] + direction[1] * center[1] + direction[2] * center[2]));
-    const angle = Math.acos(cos);
-    if (angle > radius) radius = angle;
+  for (const point of points) {
+    radius = Math.max(radius, Math.hypot(point[0] - centre[0], point[1] - centre[1], point[2] - centre[2]));
   }
+  return { constellationId, centre, radius };
+}
 
-  return { constellationId, center, radius, nearestDistance };
+export function computeGlyphFootprint(bounds: GlyphBounds, observerPosition: Vector3): GlyphFootprint | null {
+  const dx = bounds.centre[0] - observerPosition[0];
+  const dy = bounds.centre[1] - observerPosition[1];
+  const dz = bounds.centre[2] - observerPosition[2];
+  const distance = Math.hypot(dx, dy, dz);
+
+  // An observer inside the sphere is surrounded by the glyph rather than looking at it; that is the
+  // home constellation, which is drawn a different way and claims no sky.
+  if (distance <= bounds.radius || distance === 0) return null;
+
+  return {
+    constellationId: bounds.constellationId,
+    center: [dx / distance, dy / distance, dz / distance],
+    radius: Math.asin(Math.min(1, bounds.radius / distance)),
+    nearestDistance: distance - bounds.radius,
+  };
 }
 
 // Foreground glyphs hide the ones behind them, whole. Candidates are walked nearest first, and each
-// is kept only when its drawn extent clears every already-kept glyph's drawn extent - so an
-// accepted set never overlaps, and a blocked constellation is dropped entirely rather than losing
-// the few stars that happen to line up behind something.
+// is kept only when its sky region clears every already-kept glyph's region - so an accepted set
+// never overlaps, and a blocked constellation is dropped entirely rather than losing the few stars
+// that happen to line up behind something.
 export function selectVisibleConstellationIds(
-  systemsByConstellation: ReadonlyMap<number, readonly FootprintSystem[]>,
+  boundsByConstellation: ReadonlyMap<number, GlyphBounds>,
   observerPosition: Vector3,
   excludedConstellationIds: ReadonlySet<number>,
-  excludedSystemIds: ReadonlySet<number>,
 ): number[] {
   const candidates: GlyphFootprint[] = [];
-  for (const [constellationId, systems] of systemsByConstellation) {
+  for (const [constellationId, bounds] of boundsByConstellation) {
     if (excludedConstellationIds.has(constellationId)) continue;
-    const footprint = computeGlyphFootprint(constellationId, systems, observerPosition, excludedSystemIds);
+    const footprint = computeGlyphFootprint(bounds, observerPosition);
     if (footprint && footprint.radius >= LEGIBILITY_FLOOR_RADIANS) candidates.push(footprint);
   }
 
@@ -100,6 +85,5 @@ export function selectVisibleConstellationIds(
 
 export function clearsFootprint(left: GlyphFootprint, right: GlyphFootprint): boolean {
   const cos = Math.max(-1, Math.min(1, left.center[0] * right.center[0] + left.center[1] * right.center[1] + left.center[2] * right.center[2]));
-  const separation = Math.acos(cos);
-  return separation >= left.radius * ORNAMENT_EXTENT + right.radius * ORNAMENT_EXTENT + GLYPH_SEPARATION_RADIANS;
+  return Math.acos(cos) >= left.radius + right.radius + GLYPH_SEPARATION_RADIANS;
 }

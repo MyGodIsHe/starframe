@@ -1,8 +1,7 @@
 import { travelSkyProgress, type TravelFrame } from "../travelCoordinates";
 import type { Vector3 } from "../universe/generateUniverse";
-import { buildGlyphChart, chartDirection, type GlyphChart } from "./glyphChart";
-import { selectVisibleConstellationIds } from "./glyphVisibility";
-import { fitFigure, type FittedStroke } from "./sigilFigure";
+import { boundsOf, selectVisibleConstellationIds, type GlyphBounds } from "./glyphVisibility";
+import { buildGlyphShape, type GlyphShape } from "./glyphShape";
 import { figureForConstellation } from "./sigilMotifs";
 
 export const CELESTIAL_MAP_RADIUS = 24;
@@ -16,9 +15,9 @@ const MIN_VISIBLE_OPACITY = 0.001;
 // destination frame. Nothing else in a glyph is ever hidden per star.
 const COINCIDENCE_FADE_DISTANCE = 10_000_000_000_000;
 
-// A chart stroke is a straight line on the tangent plane, which is a great circle on the dome. It
-// is emitted as at most this many radians of arc per segment, so a long stroke curves with the sky
-// rather than cutting a chord through it.
+// A glyph's strokes are straight lines in space, which project onto the dome as great-circle arcs.
+// They are emitted as at most this much arc per segment so a long stroke follows the sky instead of
+// cutting a chord through it.
 const MAX_SEGMENT_RADIANS = 0.05;
 const MAX_SEGMENTS_PER_STROKE = 12;
 
@@ -31,6 +30,8 @@ type ConstellationSystem = {
 export type ConstellationGlyphIndex = {
   systemsById: ReadonlyMap<number, ConstellationSystem>;
   systemsByConstellation: ReadonlyMap<number, readonly ConstellationSystem[]>;
+  shapeByConstellation: ReadonlyMap<number, GlyphShape>;
+  boundsByConstellation: ReadonlyMap<number, GlyphBounds>;
 };
 
 export type ConstellationGlyphNode = {
@@ -43,7 +44,7 @@ export type ConstellationGlyphNode = {
 // One drawn line of a glyph. "figure" is the authored artwork; "lead" is the short tie from a real
 // Solar System to it. Neither ever stands for a Stargate link.
 export type ConstellationGlyphStroke = {
-  kind: FittedStroke["kind"];
+  kind: GlyphShape["strokes"][number]["kind"];
   from: Vector3;
   to: Vector3;
   opacity: number;
@@ -57,6 +58,8 @@ export type ConstellationGlyph = {
   strokes: ConstellationGlyphStroke[];
 };
 
+// Every glyph is built once per SDE build, in the constellation's own frame. Nothing here depends
+// on where the observer is, which is what stops a figure from redrawing itself during travel.
 export function compileConstellationGlyphIndex(systems: readonly ConstellationSystem[]): ConstellationGlyphIndex {
   const sortedSystems = [...systems].sort((left, right) => left.id - right.id);
   const systemsById = new Map(sortedSystems.map((system) => [system.id, system]));
@@ -68,7 +71,25 @@ export function compileConstellationGlyphIndex(systems: readonly ConstellationSy
     mutableSystemsByConstellation.set(system.constellationId, constellationSystems);
   }
 
-  return { systemsById, systemsByConstellation: new Map<number, readonly ConstellationSystem[]>(mutableSystemsByConstellation) };
+  const shapeByConstellation = new Map<number, GlyphShape>();
+  const boundsByConstellation = new Map<number, GlyphBounds>();
+
+  for (const [constellationId, members] of mutableSystemsByConstellation) {
+    const figure = figureForConstellation(constellationId);
+    const shape = figure && buildGlyphShape(members, figure);
+    if (shape) shapeByConstellation.set(constellationId, shape);
+
+    const extent = [...members.map((member) => member.position), ...(shape?.strokes.flatMap((stroke) => stroke.points) ?? [])];
+    const bounds = boundsOf(constellationId, extent);
+    if (bounds) boundsByConstellation.set(constellationId, bounds);
+  }
+
+  return {
+    systemsById,
+    systemsByConstellation: new Map<number, readonly ConstellationSystem[]>(mutableSystemsByConstellation),
+    shapeByConstellation,
+    boundsByConstellation,
+  };
 }
 
 export function projectConstellationGlyphs(index: ConstellationGlyphIndex, activeSystemId: number): ConstellationGlyph[] {
@@ -118,64 +139,56 @@ export function projectTravelConstellationGlyphs(index: ConstellationGlyphIndex,
 // The constellation the observer stands in surrounds them rather than occupying a compact patch of
 // sky, so it never competes for sky room: it is drawn regardless and claims nothing.
 function visibleConstellationIds(index: ConstellationGlyphIndex, observerPosition: Vector3, homeIds: ReadonlySet<number>): number[] {
-  const selected = selectVisibleConstellationIds(index.systemsByConstellation, observerPosition, homeIds, EMPTY_SYSTEM_IDS);
+  const selected = selectVisibleConstellationIds(index.boundsByConstellation, observerPosition, homeIds);
   return [...new Set([...homeIds, ...selected])].sort((left, right) => left - right);
 }
-
-const EMPTY_SYSTEM_IDS: ReadonlySet<number> = new Set<number>();
 
 function projectGlyph(index: ConstellationGlyphIndex, observerPosition: Vector3, constellationId: number, opacity: number, isHome: boolean): ConstellationGlyph {
   const systems = index.systemsByConstellation.get(constellationId) ?? [];
   const nodes = systems.map((system) => projectNode(system, observerPosition));
-  const chart = buildGlyphChart(systems, observerPosition);
+  const shape = index.shapeByConstellation.get(constellationId);
 
   return {
     constellationId,
     opacity,
     nodes: nodes.map((node) => ({ ...node, opacity: node.opacity * opacity })),
-    strokes: chart ? projectSigil(chart, constellationId, isHome, nodes, opacity) : [],
+    strokes: shape ? projectShape(shape, observerPosition, isHome, nodes, systems, opacity) : [],
   };
 }
 
-function projectSigil(
-  chart: GlyphChart,
-  constellationId: number,
+// The shape is fixed in space; only this projection moves. Travelling past a constellation turns
+// its figure the way passing a real object does, and nothing is refitted.
+function projectShape(
+  shape: GlyphShape,
+  observerPosition: Vector3,
   isHome: boolean,
   nodes: readonly ConstellationGlyphNode[],
+  systems: readonly ConstellationSystem[],
   opacity: number,
 ): ConstellationGlyphStroke[] {
-  const figure = figureForConstellation(constellationId);
-  if (!figure) return [];
-
-  const fitted = fitFigure(figure, chart.points);
-  const proximityById = new Map(nodes.map((node) => [node.systemId, node.proximity]));
-  const samples = chart.points.map((point) => ({ x: point.x, y: point.y, proximity: proximityById.get(point.systemId) ?? 0 }));
-
+  const samples = systems.map((system, index) => ({ position: system.position, proximity: nodes[index].proximity }));
   const strokes: ConstellationGlyphStroke[] = [];
-  for (const stroke of fitted.strokes) {
+
+  for (const stroke of shape.strokes) {
     // Standing inside a constellation there is no figure to read, only the systems around you, so
     // the home glyph keeps its ties to the stars and wears no artwork.
     if (isHome && stroke.kind === "figure") continue;
 
     for (let index = 0; index + 1 < stroke.points.length; index += 1) {
-      const [fromX, fromY] = stroke.points[index];
-      const [toX, toY] = stroke.points[index + 1];
-      const segments = segmentCount(chartDirection(chart, fromX, fromY), chartDirection(chart, toX, toY));
+      const from = stroke.points[index];
+      const to = stroke.points[index + 1];
+      const segments = segmentCount(direction(from, observerPosition), direction(to, observerPosition));
 
       for (let step = 0; step < segments; step += 1) {
-        const startAmount = step / segments;
-        const endAmount = (step + 1) / segments;
-        const startX = fromX + (toX - fromX) * startAmount;
-        const startY = fromY + (toY - fromY) * startAmount;
-        const endX = fromX + (toX - fromX) * endAmount;
-        const endY = fromY + (toY - fromY) * endAmount;
+        const start = lerp(from, to, step / segments);
+        const end = lerp(from, to, (step + 1) / segments);
 
         strokes.push({
           kind: stroke.kind,
-          from: scaleToMap(chartDirection(chart, startX, startY)),
-          to: scaleToMap(chartDirection(chart, endX, endY)),
+          from: onCelestialSphere(start, observerPosition),
+          to: onCelestialSphere(end, observerPosition),
           opacity,
-          proximity: (sampleProximity(samples, startX, startY) + sampleProximity(samples, endX, endY)) / 2,
+          proximity: (sampleProximity(samples, start) + sampleProximity(samples, end)) / 2,
         });
       }
     }
@@ -185,13 +198,17 @@ function projectSigil(
 }
 
 // A stroke's depth cue comes from the real Solar Systems it runs past, weighted by how closely it
-// passes them, so ornament inherits the depth of the part of the constellation it decorates rather
-// than inventing a distance of its own.
-function sampleProximity(samples: readonly { x: number; y: number; proximity: number }[], x: number, y: number): number {
+// passes them, so the artwork inherits the depth of the part of the constellation it decorates
+// rather than inventing a distance of its own.
+function sampleProximity(samples: readonly { position: Vector3; proximity: number }[], point: Vector3): number {
   let weighted = 0;
   let total = 0;
+  let scale = 0;
+  for (const sample of samples) scale = Math.max(scale, Math.hypot(sample.position[0] - point[0], sample.position[1] - point[1], sample.position[2] - point[2]));
+  const softening = (0.2 * scale) ** 2 + 1;
+
   for (const sample of samples) {
-    const weight = 1 / (0.04 + (sample.x - x) ** 2 + (sample.y - y) ** 2);
+    const weight = 1 / (softening + (sample.position[0] - point[0]) ** 2 + (sample.position[1] - point[1]) ** 2 + (sample.position[2] - point[2]) ** 2);
     weighted += sample.proximity * weight;
     total += weight;
   }
@@ -203,8 +220,25 @@ function segmentCount(from: Vector3, to: Vector3): number {
   return Math.max(1, Math.min(MAX_SEGMENTS_PER_STROKE, Math.ceil(Math.acos(cos) / MAX_SEGMENT_RADIANS)));
 }
 
-function scaleToMap(direction: Vector3): Vector3 {
-  return [direction[0] * CELESTIAL_MAP_RADIUS, direction[1] * CELESTIAL_MAP_RADIUS, direction[2] * CELESTIAL_MAP_RADIUS];
+function lerp(from: Vector3, to: Vector3, amount: number): Vector3 {
+  return [
+    from[0] + (to[0] - from[0]) * amount,
+    from[1] + (to[1] - from[1]) * amount,
+    from[2] + (to[2] - from[2]) * amount,
+  ];
+}
+
+function direction(point: Vector3, observerPosition: Vector3): Vector3 {
+  const dx = point[0] - observerPosition[0];
+  const dy = point[1] - observerPosition[1];
+  const dz = point[2] - observerPosition[2];
+  const distance = Math.hypot(dx, dy, dz) || 1;
+  return [dx / distance, dy / distance, dz / distance];
+}
+
+function onCelestialSphere(point: Vector3, observerPosition: Vector3): Vector3 {
+  const unit = direction(point, observerPosition);
+  return [unit[0] * CELESTIAL_MAP_RADIUS, unit[1] * CELESTIAL_MAP_RADIUS, unit[2] * CELESTIAL_MAP_RADIUS];
 }
 
 function projectNode(system: ConstellationSystem, observerPosition: Vector3): ConstellationGlyphNode {

@@ -12,9 +12,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { compileConstellationGlyphIndex, projectConstellationGlyphs } from "../src/constellations/constellationGlyphModel";
-import { buildGlyphChart } from "../src/constellations/glyphChart";
-import { fitFigure } from "../src/constellations/sigilFigure";
-import { SIGIL_FIGURES } from "../src/constellations/sigilMotifs";
+import { figureForConstellation, SIGIL_FIGURES } from "../src/constellations/sigilMotifs";
 import type { Vector3 } from "../src/universe/generateUniverse";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -42,14 +40,6 @@ const SIGIL_COLUMNS = 20;
 
 const FIGURES = SIGIL_FIGURES;
 
-// Until the motif table names a figure per Constellation, spread the library over the corpus by id.
-function figureIndexFor(constellationId: number): number {
-  let hash = constellationId >>> 0;
-  hash = Math.imul(hash ^ (hash >>> 16), 0x45d9f3b) >>> 0;
-  hash = Math.imul(hash ^ (hash >>> 16), 0x45d9f3b) >>> 0;
-  return ((hash ^ (hash >>> 16)) >>> 0) % FIGURES.length;
-}
-
 const SKELETON_COLOUR = "#57d8f5";
 const ORNAMENT_COLOUR = "#8f93c4";
 const HOME_COLOUR = "#3b3f6b";
@@ -73,6 +63,30 @@ function normalize(position: Vector3): Vector3 {
 
 function escapeXml(value: string): string {
   return value.replace(/[<>&]/g, (character) => (character === "<" ? "&lt;" : character === ">" ? "&gt;" : "&amp;"));
+}
+
+// Flattens a point in space the way a camera at `observer` looking at `target` would see it, so
+// the sigil sheet shows the same object the app draws rather than a separate construction.
+function viewFrom(observer: Vector3, target: Vector3) {
+  const axis = normalize([target[0] - observer[0], target[1] - observer[1], target[2] - observer[2]]);
+  const rawUp: Vector3 = Math.abs(axis[1]) > 0.99 ? [0, 0, 1] : [0, 1, 0];
+  const dot = rawUp[0] * axis[0] + rawUp[1] * axis[1] + rawUp[2] * axis[2];
+  const up = normalize([rawUp[0] - axis[0] * dot, rawUp[1] - axis[1] * dot, rawUp[2] - axis[2] * dot]);
+  const right: Vector3 = [
+    up[1] * axis[2] - up[2] * axis[1],
+    up[2] * axis[0] - up[0] * axis[2],
+    up[0] * axis[1] - up[1] * axis[0],
+  ];
+
+  return (point: Vector3): [number, number] => {
+    const offset: Vector3 = [point[0] - observer[0], point[1] - observer[1], point[2] - observer[2]];
+    const depth = offset[0] * axis[0] + offset[1] * axis[1] + offset[2] * axis[2];
+    const scale = depth === 0 ? 0 : 1 / depth;
+    return [
+      (offset[0] * right[0] + offset[1] * right[1] + offset[2] * right[2]) * scale,
+      (offset[0] * up[0] + offset[1] * up[1] + offset[2] * up[2]) * scale,
+    ];
+  };
 }
 
 function skySheet(): string {
@@ -136,34 +150,41 @@ function sigilSheet(): string {
     const members = index.systemsByConstellation.get(constellationId)!;
     if (members.length < 2) return;
 
-    // A synthetic observer a fixed multiple of the constellation's own size away, so every sigil is
-    // reviewed at a comparable apparent size instead of whatever the live camera happens to give.
-    const centroid: Vector3 = [0, 0, 0];
-    for (const member of members) for (let axis = 0; axis < 3; axis += 1) centroid[axis] += member.position[axis] / members.length;
-    let spread = 0;
-    for (const member of members) spread = Math.max(spread, Math.hypot(member.position[0] - centroid[0], member.position[1] - centroid[1], member.position[2] - centroid[2]));
-    const observerPosition: Vector3 = [centroid[0], centroid[1] - spread * 2.6, centroid[2]];
-
-    const chart = buildGlyphChart(members, observerPosition);
-    if (!chart) return;
-    const figure = FIGURES[figureIndexFor(constellationId)];
-    const fitted = fitFigure(figure, chart.points);
-    if (fitted.strokes.length === 0) return;
+    // The glyph as it stands in space. This sheet is a portrait of the artwork, so the synthetic
+    // observer stands off along the figure's own normal, a fixed multiple of its size away: every
+    // sigil is reviewed face on and at a comparable size. The sky sheet is where real angles live.
+    const shape = index.shapeByConstellation.get(constellationId);
+    if (!shape) return;
+    const observerPosition: Vector3 = [
+      shape.centre[0] - shape.normal[0] * shape.radius * 4,
+      shape.centre[1] - shape.normal[1] * shape.radius * 4,
+      shape.centre[2] - shape.normal[2] * shape.radius * 4,
+    ];
+    const view = viewFrom(observerPosition, shape.centre);
+    const figure = figureForConstellation(constellationId)!;
     drawn += 1;
     signatures.add(figure.name);
 
+    const seen = [...shape.strokes.map((stroke) => ({ kind: stroke.kind, points: stroke.points.map(view) })), ];
+    const starPoints = members.map((member) => view(member.position));
+    const all = [...seen.flatMap((stroke) => stroke.points), ...starPoints];
+    const spanX = Math.max(...all.map((point) => point[0])) - Math.min(...all.map((point) => point[0]));
+    const spanY = Math.max(...all.map((point) => point[1])) - Math.min(...all.map((point) => point[1]));
+    const centreX = (Math.max(...all.map((point) => point[0])) + Math.min(...all.map((point) => point[0]))) / 2;
+    const centreY = (Math.max(...all.map((point) => point[1])) + Math.min(...all.map((point) => point[1]))) / 2;
+    const fit = (SIGIL_CELL - 44) / Math.max(spanX, spanY, 1e-9);
+
     const originX = (position % SIGIL_COLUMNS) * SIGIL_CELL + SIGIL_CELL / 2;
     const originY = Math.floor(position / SIGIL_COLUMNS) * SIGIL_CELL + SIGIL_CELL / 2 - 4;
-    const fit = (SIGIL_CELL - 40) / 2 / 1.35;
-    const screen = (x: number, y: number): [number, number] => [originX + x * fit, originY - y * fit];
+    const screen = (point: readonly [number, number]): [number, number] => [originX + (point[0] - centreX) * fit, originY - (point[1] - centreY) * fit];
 
-    for (const stroke of fitted.strokes) {
-      const points = stroke.points.map(([x, y]) => screen(x, y).map((value) => value.toFixed(1)).join(",")).join(" ");
+    for (const stroke of seen) {
+      const points = stroke.points.map((point) => screen(point).map((value) => value.toFixed(1)).join(",")).join(" ");
       const isLead = stroke.kind === "lead";
       parts.push(`<polyline points="${points}" fill="none" stroke="${isLead ? ORNAMENT_COLOUR : SKELETON_COLOUR}" stroke-width="${isLead ? 0.5 : 1.15}" stroke-linejoin="round" opacity="${isLead ? 0.55 : 0.95}"/>`);
     }
-    for (const point of chart.points) {
-      const [x, y] = screen(point.x, point.y);
+    for (const star of starPoints) {
+      const [x, y] = screen(star);
       parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2" fill="#ffd9a0"/>`);
     }
     parts.push(`<text x="${originX}" y="${originY + SIGIL_CELL / 2 - 10}" fill="#6f78a3" font-family="monospace" font-size="7" text-anchor="middle">${escapeXml(constellationNames.get(constellationId) ?? String(constellationId))} / ${figure.name}</text>`);
