@@ -9,7 +9,7 @@ import type { SigilFigure } from "./sigilFigure";
 // in particular until it has been authored.
 type AuthoredMotif = { figure: string; caption: string };
 
-type RawFigure = { name: string; strokes: number[][][]; anchors: number[][] };
+type RawFigure = { name: string; strokes: number[][][]; anchors: number[][]; symmetry?: string; side?: number[][] };
 
 // The library is generated data, so it is narrowed rather than asserted: anything with a malformed
 // point, an empty stroke or no anchors is dropped instead of reaching the fitter.
@@ -18,6 +18,10 @@ export const SIGIL_FIGURES: readonly SigilFigure[] = (figureLibrary as { figures
     name: raw.name,
     strokes: raw.strokes.map((stroke) => stroke.filter(isPoint).map(toPoint)).filter((stroke) => stroke.length > 1),
     anchors: raw.anchors.filter(isPoint).map(toPoint),
+    // An unrecognised symmetry is dropped rather than trusted: the figure then gets the default
+    // body, which is always safe to build.
+    ...(raw.symmetry === "revolve" || raw.symmetry === "bilateral" ? { symmetry: raw.symmetry } : {}),
+    ...(raw.side && raw.side.filter(isPoint).length > 2 ? { side: raw.side.filter(isPoint).map(toPoint) } : {}),
   }))
   .filter((figure) => figure.strokes.length > 0 && figure.anchors.length > 0);
 

@@ -67,7 +67,7 @@ function drawnLines(shape: GlyphShape, observer: Vector3): SheetLine[] {
   for (const solid of shape.solids) {
     const visibility = classifyEdges(solid, observer);
     solid.edges.forEach((edge, position) => {
-      if (visibility[position] === "hidden") return;
+      if (!edge.drawn || visibility[position] === "hidden") return;
       lines.push({ kind: visibility[position], points: [solid.vertices[edge.from] as Vector3, solid.vertices[edge.to] as Vector3] });
     });
   }
@@ -281,25 +281,25 @@ function turntableSheet(): string {
   constellationIds.forEach((constellationId, row) => {
     const shape = index.shapeByConstellation.get(constellationId)!;
     const figure = figureForConstellation(constellationId)!;
-    // The yaw runs about the figure's own upright, so a crown stays a crown all the way round and
-    // only the side it is seen from changes.
-    const up = shape.normal;
-    const side: Vector3 = Math.abs(up[1]) > 0.99 ? [1, 0, 0] : [0, 1, 0];
-    const dot = side[0] * up[0] + side[1] * up[1] + side[2] * up[2];
-    const axis = normalize([side[0] - up[0] * dot, side[1] - up[1] * dot, side[2] - up[2] * dot]);
+    // The walk goes round the figure's own upright, the way a viewer would walk round a statue: a
+    // turned body must look the same from every step of it, and a slab must not.
+    const up = shape.up;
+    const facing = shape.normal;
     const across: Vector3 = [
-      axis[1] * up[2] - axis[2] * up[1],
-      axis[2] * up[0] - axis[0] * up[2],
-      axis[0] * up[1] - axis[1] * up[0],
+      up[1] * facing[2] - up[2] * facing[1],
+      up[2] * facing[0] - up[0] * facing[2],
+      up[0] * facing[1] - up[1] * facing[0],
     ];
 
     for (let step = 0; step < TURN_STEPS; step += 1) {
       const angle = (2 * Math.PI * step) / TURN_STEPS;
       const reach = shape.radius * 4;
+      // A little above the equator, so the caps are never exactly edge on and a flat body cannot
+      // hide its flatness behind a perfectly side-on view.
       const observerPosition: Vector3 = [
-        shape.centre[0] + (Math.cos(angle) * up[0] + Math.sin(angle) * across[0]) * reach + axis[0] * shape.radius,
-        shape.centre[1] + (Math.cos(angle) * up[1] + Math.sin(angle) * across[1]) * reach + axis[1] * shape.radius,
-        shape.centre[2] + (Math.cos(angle) * up[2] + Math.sin(angle) * across[2]) * reach + axis[2] * shape.radius,
+        shape.centre[0] + (Math.cos(angle) * facing[0] + Math.sin(angle) * across[0]) * reach + up[0] * shape.radius,
+        shape.centre[1] + (Math.cos(angle) * facing[1] + Math.sin(angle) * across[1]) * reach + up[1] * shape.radius,
+        shape.centre[2] + (Math.cos(angle) * facing[2] + Math.sin(angle) * across[2]) * reach + up[2] * shape.radius,
       ];
       const view = viewFrom(observerPosition, shape.centre);
       const seen = drawnLines(shape, observerPosition).map((line) => ({ kind: line.kind, points: line.points.map(view) }));

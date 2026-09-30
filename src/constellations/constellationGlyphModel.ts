@@ -204,7 +204,9 @@ function projectShape(
     for (const solid of shape.solids) {
       const visibility = classifyEdges(solid, observerPosition);
       for (const [index, edge] of solid.edges.entries()) {
-        if (visibility[index] === "hidden") continue;
+        // A structural edge holds the surface together and still decides what it hides; it was
+        // never part of the drawing.
+        if (!edge.drawn || visibility[index] === "hidden") continue;
         emit(visibility[index], solid.vertices[edge.from] as Vector3, solid.vertices[edge.to] as Vector3);
       }
     }

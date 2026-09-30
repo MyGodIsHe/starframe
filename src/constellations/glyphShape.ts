@@ -1,6 +1,6 @@
 import type { Vector3 } from "../universe/generateUniverse";
-import { buildPrism, isClosedStroke, mapSolid, type GlyphSolid, type SolidPoint } from "./glyphSolid";
-import { fitFigure, type SigilFigure } from "./sigilFigure";
+import { buildBody, buildLathe, isClosedStroke, mapSolid, spanAt, type GlyphSolid, type SolidPoint } from "./glyphSolid";
+import { fitFigure, type FigurePoint, type SigilFigure } from "./sigilFigure";
 
 // A Constellation Glyph as a fixed object in space.
 //
@@ -41,6 +41,8 @@ export type GlyphShape = {
   centre: Vector3;
   /** Normal of the plane the figure was laid out on: the direction its near cap faces. */
   normal: Vector3;
+  /** The figure's own upright within that plane, from the galactic vertical. */
+  up: Vector3;
   /** Distance from the centre to the farthest member, in metres. */
   radius: number;
 };
@@ -55,7 +57,9 @@ type ShapeSystem = {
 const GALACTIC_UP: Vector3 = [0, 1, 0];
 const DEGENERATE = 1e-9;
 
-// Half the body's thickness, as a fraction of the constellation's radius.
+// Half the body's thickness, as a fraction of the figure's own size rather than of the
+// constellation's radius: a body has to be thick in proportion to the thing it is a body of, or a
+// long thin figure comes out a sliver however large the constellation around it.
 //
 // The depth is authored, not measured, and that is a deliberate change: real constellations are
 // flatter than they look - the out-of-plane spread of their Solar Systems is a median 0.126 of
@@ -66,6 +70,11 @@ const DEGENERATE = 1e-9;
 const BASE_DEPTH = 0.45;
 const DEPTH_BAND = 0.18;
 const MEDIAN_SPREAD = 0.126;
+
+// What a figure that declares no side view gets instead: a body fullest at mid-height and drawn in
+// towards the extremes. It is not a side view and does not pretend to be one - it only keeps the
+// figure from being a slab with a rectangle for a profile until the side view is authored.
+const DEFAULT_WAIST = 0.3;
 
 export function buildGlyphShape(input: readonly ShapeSystem[], figure: SigilFigure): GlyphShape | null {
   if (input.length < 2) return null;
@@ -98,7 +107,9 @@ export function buildGlyphShape(input: readonly ShapeSystem[], figure: SigilFigu
   const fitted = fitFigure(figure, chartPoints);
   if (fitted.strokes.length === 0) return null;
 
-  const depth = bodyDepth(planar.map((point) => point.z / radius));
+  const depthFraction = bodyDepth(planar.map((point) => point.z / radius));
+  // The figure's own size, for the lines struck on its caps: they belong to no one outline.
+  const figureDepth = depthFraction * extentOf(fitted.strokes.flatMap((stroke) => stroke.points));
   const toAbsolute = (point: SolidPoint): SolidPoint => [
     centroid[0] + (frame.right[0] * point[0] + frame.up[0] * point[1] + frame.normal[0] * point[2]) * radius,
     centroid[1] + (frame.right[1] * point[0] + frame.up[1] * point[1] + frame.normal[1] * point[2]) * radius,
@@ -121,7 +132,7 @@ export function buildGlyphShape(input: readonly ShapeSystem[], figure: SigilFigu
       continue;
     }
 
-    const solid = isClosedStroke(stroke.points) ? buildPrism(stroke.points, depth) : null;
+    const solid = isClosedStroke(stroke.points) ? buildSolid(figure, stroke.points, stroke.source, depthFraction) : null;
     if (solid) {
       solids.push(mapSolid(solid, toAbsolute, toDirection));
       continue;
@@ -131,12 +142,64 @@ export function buildGlyphShape(input: readonly ShapeSystem[], figure: SigilFigu
     // detail on the side facing the pilot, and the far one is hidden behind the body with the rest
     // of the far side.
     for (const side of [1, -1] as const) {
-      strokes.push({ kind: "figure", side, points: stroke.points.map((point) => toAbsolute([point[0], point[1], side * depth]) as Vector3) });
+      strokes.push({ kind: "figure", side, points: stroke.points.map((point) => toAbsolute([point[0], point[1], side * figureDepth]) as Vector3) });
     }
   }
 
   if (solids.length === 0 && strokes.every((stroke) => stroke.kind === "lead")) return null;
-  return { solids, strokes, centre: centroid, normal: frame.normal, radius };
+  return { solids, strokes, centre: centroid, normal: frame.normal, up: frame.up, radius };
+}
+
+// The body one closed outline stands for. A figure that can be turned is turned, which costs no
+// authored art at all; otherwise the outline keeps its shape and only its thickness varies, from
+// the authored side view where there is one.
+function buildSolid(figure: SigilFigure, outline: readonly FigurePoint[], source: number | undefined, depthFraction: number): GlyphSolid | null {
+  // A turned body is as deep as it is wide by construction - that is what being turned means - so
+  // the constellation's own flatness only squashes or fills it within the band, and must never be
+  // multiplied by the figure's size a second time.
+  if (figure.symmetry === "revolve") return buildLathe(outline, depthFraction / BASE_DEPTH);
+
+  const profile = source === undefined ? null : figure.side ?? null;
+  return buildBody(outline, halfDepths(outline, profile, depthFraction * extentOf(outline)));
+}
+
+// Thickness along the outline, as a share of the body's depth. Height is measured as a fraction of
+// the outline's own extent rather than in figure space, so the profile survives the fit's scaling
+// and its slight tilt without having to be transformed alongside it.
+function halfDepths(outline: readonly FigurePoint[], profile: readonly FigurePoint[] | null, depth: number): number[] {
+  const heights = outline.map(([, y]) => y);
+  const low = Math.min(...heights);
+  const high = Math.max(...heights);
+  if (high - low <= DEGENERATE) return outline.map(() => depth);
+
+  const sideLow = profile ? Math.min(...profile.map(([, y]) => y)) : 0;
+  const sideHigh = profile ? Math.max(...profile.map(([, y]) => y)) : 0;
+  let widest = 0;
+  if (profile) {
+    for (let step = 0; step <= 32; step += 1) {
+      const span = spanAt(profile, sideLow + ((sideHigh - sideLow) * step) / 32);
+      if (span) widest = Math.max(widest, (span[1] - span[0]) / 2);
+    }
+  }
+
+  return heights.map((y) => {
+    const height = (y - low) / (high - low);
+    if (!profile || widest <= DEGENERATE) return depth * (DEFAULT_WAIST + (1 - DEFAULT_WAIST) * Math.sqrt(Math.max(0, 1 - (2 * height - 1) ** 2)));
+    const span = spanAt(profile, sideLow + (sideHigh - sideLow) * height);
+    const half = span ? (span[1] - span[0]) / 2 : 0;
+    return Math.max(depth * 0.08, (depth * half) / widest);
+  });
+}
+
+// How big a run of points is, as the geometric mean of its half-extents: a measure that shrinks
+// with a small figure and does not let one long axis stand in for the whole of it.
+function extentOf(points: readonly FigurePoint[]): number {
+  if (points.length === 0) return 0;
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  const width = (Math.max(...xs) - Math.min(...xs)) / 2;
+  const height = (Math.max(...ys) - Math.min(...ys)) / 2;
+  return Math.sqrt(Math.max(width, DEGENERATE) * Math.max(height, DEGENERATE));
 }
 
 // Where in the allowed band this constellation's body falls, from how far its own Solar Systems sit

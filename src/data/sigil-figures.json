@@ -78,7 +78,8 @@
           0.8,
           -0.5
         ]
-      ]
+      ],
+      "symmetry": "revolve"
     },
     {
       "name": "raptor",
@@ -227,7 +228,8 @@
           0.24,
           -0.04
         ]
-      ]
+      ],
+      "symmetry": "bilateral"
     },
     {
       "name": "serpent",
@@ -406,7 +408,8 @@
           1.05,
           0.419
         ]
-      ]
+      ],
+      "symmetry": "bilateral"
     },
     {
       "name": "hammer",
@@ -475,7 +478,8 @@
           0,
           0.05
         ]
-      ]
+      ],
+      "symmetry": "bilateral"
     },
     {
       "name": "chalice",
@@ -588,7 +592,8 @@
           0.38,
           -0.62
         ]
-      ]
+      ],
+      "symmetry": "revolve"
     },
     {
       "name": "eye",
@@ -813,7 +818,8 @@
           0,
           -0.29
         ]
-      ]
+      ],
+      "symmetry": "bilateral"
     },
     {
       "name": "vessel",
@@ -890,7 +896,8 @@
           0,
           -0.6
         ]
-      ]
+      ],
+      "symmetry": "bilateral"
     },
     {
       "name": "wolf",
@@ -979,7 +986,8 @@
           -0.66,
           0.1
         ]
-      ]
+      ],
+      "symmetry": "bilateral"
     },
     {
       "name": "gate",
@@ -1102,7 +1110,8 @@
           0,
           0.08
         ]
-      ]
+      ],
+      "symmetry": "bilateral"
     },
     {
       "name": "tower",
@@ -1175,7 +1184,8 @@
           0.3,
           0.3
         ]
-      ]
+      ],
+      "symmetry": "revolve"
     }
   ]
 }

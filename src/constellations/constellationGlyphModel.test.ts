@@ -216,31 +216,37 @@ describe("Glyph Hidden Lines", () => {
   // which would put parallax inside a stationary view.
   it("shows a different side of the same fixed object from a different Solar System", () => {
     const index = compileConstellationGlyphIndex(UNIVERSE_SYSTEMS);
-    // Two Solar Systems of one Constellation look out on nearly the same sky, so they share glyphs
-    // to compare - and stand far enough apart to see them from different sides.
-    const first = UNIVERSE_OBSERVERS[0];
-    const second = UNIVERSE_SYSTEMS.find((system) => system.constellationId === first.constellationId && system.id !== first.id)!;
-
     const drawnBy = (observerId: number) =>
       new Map(projectConstellationGlyphs(index, observerId).map((glyph) => [
         glyph.constellationId,
         glyph.strokes.filter((stroke) => stroke.kind !== "lead"),
       ]));
 
-    const here = drawnBy(first.id);
-    const there = drawnBy(second.id);
-    const shared = [...here.keys()].filter((constellationId) => there.has(constellationId) && constellationId !== first.constellationId);
-    expect(shared.length).toBeGreaterThan(0);
-
+    // Two Solar Systems of one Constellation look out on nearly the same sky, so they share glyphs
+    // to compare - and stand far enough apart to see them from different sides. Which pair shares
+    // anything depends on Glyph Occlusion, so the pair is searched for rather than assumed.
+    let compared = 0;
     let turned = 0;
-    for (const constellationId of shared) {
-      const edges = index.shapeByConstellation.get(constellationId)!.solids.reduce((total, solid) => total + solid.edges.length, 0);
 
-      // Part of the body is always missing - that is the far side - and never all of it.
-      expect(here.get(constellationId)!.length).toBeGreaterThan(0);
-      expect(here.get(constellationId)!.length).toBeLessThan(edges * MAX_SEGMENTS_PER_EDGE);
-      if (here.get(constellationId)!.length !== there.get(constellationId)!.length) turned += 1;
+    for (const first of UNIVERSE_OBSERVERS) {
+      const second = UNIVERSE_SYSTEMS.find((system) => system.constellationId === first.constellationId && system.id !== first.id);
+      if (!second) continue;
+
+      const here = drawnBy(first.id);
+      const there = drawnBy(second.id);
+
+      for (const constellationId of [...here.keys()].filter((id) => there.has(id) && id !== first.constellationId)) {
+        const edges = index.shapeByConstellation.get(constellationId)!.solids.reduce((total, solid) => total + solid.edges.length, 0);
+        compared += 1;
+
+        // Part of the body is always missing - that is the far side - and never all of it.
+        expect(here.get(constellationId)!.length).toBeGreaterThan(0);
+        expect(here.get(constellationId)!.length).toBeLessThan(edges * MAX_SEGMENTS_PER_EDGE);
+        if (here.get(constellationId)!.length !== there.get(constellationId)!.length) turned += 1;
+      }
     }
+
+    expect(compared).toBeGreaterThan(0);
     expect(turned).toBeGreaterThan(0);
   });
 

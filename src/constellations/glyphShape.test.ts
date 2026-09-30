@@ -33,20 +33,22 @@ function allPoints(shape: GlyphShape): Vector3[] {
   ];
 }
 
-// How thick the bodies stand through the plane they were fitted in, as a share of the
-// constellation's own radius.
+// How thick the bodies stand through the plane they were fitted in, against how wide they are
+// across it: a body has to be thick in proportion to itself, not to the constellation around it.
 function bodyThickness(shape: GlyphShape): number {
   let least = Infinity;
   let most = -Infinity;
+  let across = 0;
   for (const solid of shape.solids) {
     for (const vertex of solid.vertices) {
       const offset = [0, 1, 2].map((axis) => vertex[axis] - shape.centre[axis]);
       const along = offset[0] * shape.normal[0] + offset[1] * shape.normal[1] + offset[2] * shape.normal[2];
       least = Math.min(least, along);
       most = Math.max(most, along);
+      across = Math.max(across, Math.hypot(offset[0] - shape.normal[0] * along, offset[1] - shape.normal[1] * along, offset[2] - shape.normal[2] * along));
     }
   }
-  return Number.isFinite(least) ? (most - least) / shape.radius : 0;
+  return Number.isFinite(least) && across > 0 ? (most - least) / (2 * across) : 0;
 }
 
 function planeResiduals(points: readonly Vector3[]): number {
@@ -93,9 +95,10 @@ describe("buildGlyphShape", () => {
 
     // Real constellations are far too flat to supply the depth themselves - a median 0.126 of their
     // radius - so the proportion is the artwork's and every figure gets a body. What the data still
-    // decides is where inside the allowed band a constellation falls.
-    expect(flat).toBeGreaterThan(0.2);
-    expect(deep).toBeGreaterThan(flat);
+    // decides is where inside the allowed band a constellation falls, and the band is wide enough
+    // that a deep cloud comes out visibly fuller than a flat one.
+    expect(flat).toBeGreaterThan(0.1);
+    expect(deep).toBeGreaterThan(flat * 1.4);
     expect(planeResiduals(allPoints(buildGlyphShape(FLAT, FIGURE)!))).toBeGreaterThan(0.1);
   });
 

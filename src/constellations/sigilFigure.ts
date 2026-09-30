@@ -18,17 +18,34 @@ export type SigilFigure = {
   strokes: readonly (readonly FigurePoint[])[];
   /** Points of the figure a real Solar System is meant to land on, in priority order. */
   anchors: readonly FigurePoint[];
+  /**
+   * How this figure's closed outlines become bodies. `revolve` turns the outline about the
+   * figure's upright, which is right for anything a potter could throw and needs nothing authored
+   * twice. `bilateral` keeps the outline and takes its thickness from `side`. Absent, a figure gets
+   * a rounded body of its own proportions.
+   */
+  symmetry?: "revolve" | "bilateral";
+  /**
+   * The same subject seen from the side, as one closed outline in the same space, where x is depth
+   * and y is height. Only its half-width at each height is used: that is what makes the side
+   * silhouette the side view rather than the edge of a slab.
+   */
+  side?: readonly FigurePoint[];
 };
 
 export type FittedStroke = {
   kind: "figure" | "lead";
   points: readonly FigurePoint[];
+  /** Which authored stroke this came from, for a figure stroke; absent for a Glyph Lead. */
+  source?: number;
 };
 
 export type FittedFigure = {
   strokes: FittedStroke[];
   /** Which star each anchor was matched to, by index into the input points. */
   matched: readonly number[];
+  /** Total in-plane scale the figure was placed at, so a body can be given a matching thickness. */
+  scale: number;
 };
 
 type FitPoint = { systemId: number; x: number; y: number };
@@ -55,7 +72,7 @@ const REFINEMENT_PASSES = 6;
 
 export function fitFigure(figure: SigilFigure, points: readonly FitPoint[]): FittedFigure {
   const stars = points.map((point): FigurePoint => [point.x, point.y]);
-  if (stars.length === 0 || figure.anchors.length === 0) return { strokes: [], matched: [] };
+  if (stars.length === 0 || figure.anchors.length === 0) return { strokes: [], matched: [], scale: 0 };
 
   const best = bestAlignment(figure.anchors, stars);
   const placedAnchors = figure.anchors.map((anchor) => applySimilarity(anchor, best.transform));
@@ -81,7 +98,7 @@ export function fitFigure(figure: SigilFigure, points: readonly FitPoint[]): Fit
   };
 
   const strokes: FittedStroke[] = figure.strokes
-    .map((stroke): FittedStroke => ({ kind: "figure", points: stroke.map((point) => warp(applySimilarity(point, best.transform))) }))
+    .map((stroke, source): FittedStroke => ({ kind: "figure", source, points: stroke.map((point) => warp(applySimilarity(point, best.transform))) }))
     .filter((stroke) => stroke.points.length > 1);
 
   for (let index = 0; index < stars.length; index += 1) {
@@ -90,7 +107,8 @@ export function fitFigure(figure: SigilFigure, points: readonly FitPoint[]): Fit
     strokes.push({ kind: "lead", points: [stars[index], nearest] });
   }
 
-  return { strokes: contain(strokes), matched: best.matched };
+  const contained = contain(strokes);
+  return { strokes: contained.strokes, matched: best.matched, scale: best.transform.scale * contained.factor };
 }
 
 type Similarity = { scale: number; rotation: number; tx: number; ty: number };
@@ -232,13 +250,16 @@ function closestOnSegment(point: FigurePoint, from: FigurePoint, to: FigurePoint
   return [from[0] + dx * amount, from[1] + dy * amount];
 }
 
-function contain(strokes: readonly FittedStroke[]): FittedStroke[] {
+function contain(strokes: readonly FittedStroke[]): { strokes: FittedStroke[]; factor: number } {
   let reach = 0;
   for (const stroke of strokes) for (const point of stroke.points) reach = Math.max(reach, Math.hypot(point[0], point[1]));
-  if (reach <= FIGURE_EXTENT) return [...strokes];
+  if (reach <= FIGURE_EXTENT) return { strokes: [...strokes], factor: 1 };
 
   const factor = FIGURE_EXTENT / reach;
-  return strokes.map((stroke) => ({ kind: stroke.kind, points: stroke.points.map((point): FigurePoint => [point[0] * factor, point[1] * factor]) }));
+  return {
+    strokes: strokes.map((stroke) => ({ ...stroke, points: stroke.points.map((point): FigurePoint => [point[0] * factor, point[1] * factor]) })),
+    factor,
+  };
 }
 
 function clampVector(vector: FigurePoint, limit: number): FigurePoint {

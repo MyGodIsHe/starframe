@@ -45,6 +45,12 @@ What makes these good or bad:
 - Bad: thin scribbles, near-symmetric blobs, shapes so simple they collapse into a triangle, or interior detail that disappears at small size.
 - A viewer sees only lines, no fill and no colour. Anything that depends on shading will not read.
 
+Each figure also becomes a solid object, because a pilot flies past it and sees it from every side. Say how it should be given depth:
+- "symmetry": "revolve" for a subject that is the same all the way round its upright - a chalice, a tower, a beacon, an obelisk. Its depth is taken from the outline you already drew, so there is nothing more to do.
+- "symmetry": "bilateral" for a subject with a left and a right - a wolf, a raptor, a vessel, a hand. These need a second drawing.
+
+For a bilateral figure, add "side": the same subject seen from its side, as ONE closed outline in the same square from -1 to 1, drawn at the same height and in the same orientation as the front view, where x is now depth instead of width. Only its width at each height is used: it says how thick the subject is there. A wolf seen from the side is deep through the chest and shallow at the legs; a vessel is deep at the hull and narrow at the mast. Do not draw detail in it, only the outline of the thickness.
+
 Draw the subject you are given. Use its name as the figure name, exactly as given.`;
 
 const RESPONSE_SCHEMA = {
@@ -57,7 +63,7 @@ const RESPONSE_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["name", "strokes", "anchors"],
+        required: ["name", "strokes", "anchors", "symmetry"],
         properties: {
           name: { type: "string" },
           strokes: {
@@ -68,13 +74,18 @@ const RESPONSE_SCHEMA = {
             type: "array",
             items: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 },
           },
+          symmetry: { type: "string", enum: ["revolve", "bilateral"] },
+          side: {
+            type: "array",
+            items: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 },
+          },
         },
       },
     },
   },
 };
 
-type Figure = { name: string; strokes: number[][][]; anchors: number[][] };
+type Figure = { name: string; strokes: number[][][]; anchors: number[][]; symmetry: "revolve" | "bilateral"; side?: number[][] };
 
 function distanceToArtwork(point: number[], strokes: number[][][]): number {
   let best = Infinity;
@@ -111,6 +122,25 @@ function rejectionFor(figure: Figure, subject: string): string | null {
   const spanY = Math.max(...all.map((point) => point[1])) - Math.min(...all.map((point) => point[1]));
   if (Math.max(spanX, spanY) < 1.4) return `too small, spans ${Math.max(spanX, spanY).toFixed(2)}`;
   if (Math.min(spanX, spanY) < 0.25) return "flat, barely two-dimensional";
+
+  // A bilateral figure without a side view would be given a body of default proportions, which is
+  // the slab this second drawing exists to avoid.
+  if (figure.symmetry === "bilateral") {
+    const side = figure.side ?? [];
+    if (side.length < 4 || side.length > 24) return `a side view with ${side.length} points`;
+    for (const point of side) {
+      if (point.length !== 2 || !point.every(Number.isFinite)) return "a malformed side view point";
+      if (Math.abs(point[0]) > 1.001 || Math.abs(point[1]) > 1.001) return "a side view point outside the square";
+    }
+    const first = side[0];
+    const last = side[side.length - 1];
+    if (Math.hypot(first[0] - last[0], first[1] - last[1]) > 1e-6) return "a side view that is not closed";
+    const sideSpanY = Math.max(...side.map((point) => point[1])) - Math.min(...side.map((point) => point[1]));
+    if (sideSpanY < spanY * 0.6) return "a side view drawn at a different height from the front";
+    if (Math.max(...side.map((point) => point[0])) - Math.min(...side.map((point) => point[0])) < 0.2) return "a side view with no depth in it";
+  } else if (figure.side) {
+    return "a side view on a figure that is turned, where it means nothing";
+  }
 
   for (const anchor of figure.anchors) {
     if (distanceToArtwork(anchor, figure.strokes) > 0.08) return "an anchor floating off the artwork";
