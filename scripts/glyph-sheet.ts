@@ -8,10 +8,13 @@
 //   npx tsx scripts/glyph-sheet.ts --png       also rasterise, for viewing without a browser
 //   npx tsx scripts/glyph-sheet.ts --rows=8    only the first N rows of the sigil sheet
 //   npx tsx scripts/glyph-sheet.ts --figures   the raw figure library, unfitted, with its anchors
+//   npx tsx scripts/glyph-sheet.ts --turntable a few glyphs walked round, to judge their volume
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { compileConstellationGlyphIndex, projectConstellationGlyphs } from "../src/constellations/constellationGlyphModel";
+import type { GlyphShape } from "../src/constellations/glyphShape";
+import { classifyEdges } from "../src/constellations/glyphSolid";
 import { figureForConstellation, SIGIL_FIGURES } from "../src/constellations/sigilMotifs";
 import type { Vector3 } from "../src/universe/generateUniverse";
 
@@ -43,6 +46,39 @@ const FIGURES = SIGIL_FIGURES;
 const SKELETON_COLOUR = "#57d8f5";
 const ORNAMENT_COLOUR = "#8f93c4";
 const HOME_COLOUR = "#3b3f6b";
+
+// The drawing's own ladder, the same one the app renders: the outline where the body turns away,
+// then the edges on its near side, then open lines struck on the near cap, then the ties.
+const LINE_STYLE = {
+  silhouette: { colour: SKELETON_COLOUR, weight: 1.5, opacity: 1 },
+  interior: { colour: "#3ba6cc", weight: 0.9, opacity: 0.8 },
+  figure: { colour: "#8fd9ea", weight: 0.8, opacity: 0.7 },
+  lead: { colour: ORNAMENT_COLOUR, weight: 0.5, opacity: 0.55 },
+} as const;
+
+type SheetLine = { kind: keyof typeof LINE_STYLE; points: Vector3[] };
+
+// What one observer actually sees of a glyph: the body's visible edges, plus the open lines struck
+// on whichever cap is turned towards them. Built from the same functions the app uses, so the sheet
+// cannot drift away from what a pilot gets.
+function drawnLines(shape: GlyphShape, observer: Vector3): SheetLine[] {
+  const lines: SheetLine[] = [];
+
+  for (const solid of shape.solids) {
+    const visibility = classifyEdges(solid, observer);
+    solid.edges.forEach((edge, position) => {
+      if (visibility[position] === "hidden") return;
+      lines.push({ kind: visibility[position], points: [solid.vertices[edge.from] as Vector3, solid.vertices[edge.to] as Vector3] });
+    });
+  }
+
+  const nearCapFaces = shape.normal[0] * (observer[0] - shape.centre[0]) + shape.normal[1] * (observer[1] - shape.centre[1]) + shape.normal[2] * (observer[2] - shape.centre[2]) > 0;
+  for (const stroke of shape.strokes) {
+    if (stroke.side !== 0 && (stroke.side === 1) !== nearCapFaces) continue;
+    lines.push({ kind: stroke.kind, points: [...stroke.points] });
+  }
+  return lines;
+}
 
 // Hammer projection: the whole celestial sphere in one ellipse, so nothing is cropped and glyph
 // crowding shows up everywhere at once rather than only where a camera happens to point.
@@ -116,8 +152,9 @@ function skySheet(): string {
         // Segments that jump the seam of the projection are simply skipped; on a review sheet a
         // missing hair is better than a line ruled straight across the whole sky.
         if (Math.abs(x1 - x2) > 1.2) continue;
-        const colour = isHome ? HOME_COLOUR : stroke.kind === "lead" ? ORNAMENT_COLOUR : SKELETON_COLOUR;
-        const weight = isHome ? 0.55 : stroke.kind === "lead" ? 0.5 : 1.1;
+        const style = LINE_STYLE[stroke.kind];
+        const colour = isHome ? HOME_COLOUR : style.colour;
+        const weight = isHome ? 0.55 : style.weight;
         parts.push(`<line x1="${(originX + x1 * scale).toFixed(2)}" y1="${(originY - y1 * scale).toFixed(2)}" x2="${(originX + x2 * scale).toFixed(2)}" y2="${(originY - y2 * scale).toFixed(2)}" stroke="${colour}" stroke-width="${weight}" opacity="${(stroke.opacity * (isHome ? 0.5 : 0.92)).toFixed(3)}"/>`);
       }
       for (const node of glyph.nodes) {
@@ -165,7 +202,7 @@ function sigilSheet(): string {
     drawn += 1;
     signatures.add(figure.name);
 
-    const seen = [...shape.strokes.map((stroke) => ({ kind: stroke.kind, points: stroke.points.map(view) })), ];
+    const seen = drawnLines(shape, observerPosition).map((line) => ({ kind: line.kind, points: line.points.map(view) }));
     const starPoints = members.map((member) => view(member.position));
     const all = [...seen.flatMap((stroke) => stroke.points), ...starPoints];
     const spanX = Math.max(...all.map((point) => point[0])) - Math.min(...all.map((point) => point[0]));
@@ -180,8 +217,8 @@ function sigilSheet(): string {
 
     for (const stroke of seen) {
       const points = stroke.points.map((point) => screen(point).map((value) => value.toFixed(1)).join(",")).join(" ");
-      const isLead = stroke.kind === "lead";
-      parts.push(`<polyline points="${points}" fill="none" stroke="${isLead ? ORNAMENT_COLOUR : SKELETON_COLOUR}" stroke-width="${isLead ? 0.5 : 1.15}" stroke-linejoin="round" opacity="${isLead ? 0.55 : 0.95}"/>`);
+      const style = LINE_STYLE[stroke.kind];
+      parts.push(`<polyline points="${points}" fill="none" stroke="${style.colour}" stroke-width="${style.weight}" stroke-linejoin="round" opacity="${style.opacity}"/>`);
     }
     for (const star of starPoints) {
       const [x, y] = screen(star);
@@ -228,6 +265,72 @@ function figureSheet(): string {
   return parts.join("\n");
 }
 
+
+// A handful of glyphs walked all the way round, which is the only way to judge whether a figure has
+// volume: a flat drawing turned edge on collapses to a line, and a body does not. Each row is one
+// constellation seen from the same distance at even steps of yaw about its own upright.
+const TURN_STEPS = 8;
+const TURN_CELL = 190;
+
+function turntableSheet(): string {
+  const constellationIds = [...index.shapeByConstellation.keys()].sort((left, right) => left - right).slice(0, turntableRows);
+  const width = TURN_STEPS * TURN_CELL;
+  const height = constellationIds.length * TURN_CELL;
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#05060d"/>`];
+
+  constellationIds.forEach((constellationId, row) => {
+    const shape = index.shapeByConstellation.get(constellationId)!;
+    const figure = figureForConstellation(constellationId)!;
+    // The yaw runs about the figure's own upright, so a crown stays a crown all the way round and
+    // only the side it is seen from changes.
+    const up = shape.normal;
+    const side: Vector3 = Math.abs(up[1]) > 0.99 ? [1, 0, 0] : [0, 1, 0];
+    const dot = side[0] * up[0] + side[1] * up[1] + side[2] * up[2];
+    const axis = normalize([side[0] - up[0] * dot, side[1] - up[1] * dot, side[2] - up[2] * dot]);
+    const across: Vector3 = [
+      axis[1] * up[2] - axis[2] * up[1],
+      axis[2] * up[0] - axis[0] * up[2],
+      axis[0] * up[1] - axis[1] * up[0],
+    ];
+
+    for (let step = 0; step < TURN_STEPS; step += 1) {
+      const angle = (2 * Math.PI * step) / TURN_STEPS;
+      const reach = shape.radius * 4;
+      const observerPosition: Vector3 = [
+        shape.centre[0] + (Math.cos(angle) * up[0] + Math.sin(angle) * across[0]) * reach + axis[0] * shape.radius,
+        shape.centre[1] + (Math.cos(angle) * up[1] + Math.sin(angle) * across[1]) * reach + axis[1] * shape.radius,
+        shape.centre[2] + (Math.cos(angle) * up[2] + Math.sin(angle) * across[2]) * reach + axis[2] * shape.radius,
+      ];
+      const view = viewFrom(observerPosition, shape.centre);
+      const seen = drawnLines(shape, observerPosition).map((line) => ({ kind: line.kind, points: line.points.map(view) }));
+      const flat = seen.flatMap((line) => line.points);
+      if (flat.length === 0) continue;
+
+      // Every cell of a row is scaled the same way, or a figure turning edge on would be silently
+      // zoomed back up to fill its cell and the collapse would never show.
+      const span = shape.radius / reach;
+      const originX = step * TURN_CELL + TURN_CELL / 2;
+      const originY = row * TURN_CELL + TURN_CELL / 2 - 4;
+      const fit = (TURN_CELL - 40) / (2.6 * span);
+      const screen = (point: readonly [number, number]): [number, number] => [originX + point[0] * fit, originY - point[1] * fit];
+
+      for (const line of seen) {
+        const points = line.points.map((point) => screen(point).map((value) => value.toFixed(1)).join(",")).join(" ");
+        const style = LINE_STYLE[line.kind];
+        parts.push(`<polyline points="${points}" fill="none" stroke="${style.colour}" stroke-width="${style.weight}" stroke-linejoin="round" opacity="${style.opacity}"/>`);
+      }
+      const visible = seen.filter((line) => line.kind !== "lead").length;
+      parts.push(`<text x="${originX}" y="${row * TURN_CELL + TURN_CELL - 8}" fill="#6f78a3" font-family="monospace" font-size="8" text-anchor="middle">${((angle * 180) / Math.PI).toFixed(0)}deg / ${visible} lines</text>`);
+    }
+
+    parts.push(`<text x="8" y="${row * TURN_CELL + 14}" fill="#7f88b5" font-family="monospace" font-size="9">${escapeXml(constellationNames.get(constellationId) ?? String(constellationId))} / ${figure.name}</text>`);
+  });
+
+  parts.push("</svg>");
+  console.log(`turntable sheet: ${constellationIds.length} constellations at ${TURN_STEPS} angles`);
+  return parts.join("\n");
+}
+
 async function rasterise(name: string, svgWidth: number, svgHeight: number): Promise<void> {
   const { chromium } = await import("@playwright/test");
   const browser = await chromium.launch();
@@ -240,14 +343,18 @@ async function rasterise(name: string, svgWidth: number, svgHeight: number): Pro
 const rowsArgument = process.argv.find((argument) => argument.startsWith("--rows="));
 const sigilRowLimit = rowsArgument ? Number(rowsArgument.slice("--rows=".length)) : null;
 const wantsFigures = process.argv.includes("--figures");
-const wantsSky = !wantsFigures && (process.argv.includes("--sky") || !process.argv.includes("--sigils"));
-const wantsSigils = !wantsFigures && (process.argv.includes("--sigils") || !process.argv.includes("--sky"));
+const wantsTurntable = process.argv.includes("--turntable");
+const turntableRows = rowsArgument ? Number(rowsArgument.slice("--rows=".length)) : 6;
+const special = wantsFigures || wantsTurntable;
+const wantsSky = !special && (process.argv.includes("--sky") || !process.argv.includes("--sigils"));
+const wantsSigils = !special && (process.argv.includes("--sigils") || !process.argv.includes("--sky"));
 const wantsPng = process.argv.includes("--png");
 
 mkdirSync(outputDir, { recursive: true });
 if (wantsSky) writeFileSync(resolve(outputDir, "sky.svg"), skySheet());
 if (wantsSigils) writeFileSync(resolve(outputDir, "sigils.svg"), sigilSheet());
 if (wantsFigures) writeFileSync(resolve(outputDir, "figures.svg"), figureSheet());
+if (wantsTurntable) writeFileSync(resolve(outputDir, "turntable.svg"), turntableSheet());
 
 if (wantsPng && wantsFigures) {
   const figures = FIGURES;
@@ -255,7 +362,11 @@ if (wantsPng && wantsFigures) {
   await rasterise("figures", columns * 240, Math.ceil(FIGURES.length / columns) * 240);
 }
 
-if (wantsPng && !wantsFigures) {
+if (wantsPng && wantsTurntable) {
+  await rasterise("turntable", TURN_STEPS * TURN_CELL, turntableRows * TURN_CELL);
+}
+
+if (wantsPng && !special) {
   const sigilRows = sigilRowLimit ?? Math.ceil([...index.systemsByConstellation.keys()].length / SIGIL_COLUMNS);
   if (wantsSky) await rasterise("sky", SKY_COLUMNS * SKY_CELL_WIDTH, Math.ceil(SKY_OBSERVER_COUNT / SKY_COLUMNS) * SKY_CELL_HEIGHT);
   if (wantsSigils) await rasterise("sigils", SIGIL_COLUMNS * SIGIL_CELL, sigilRows * SIGIL_CELL);

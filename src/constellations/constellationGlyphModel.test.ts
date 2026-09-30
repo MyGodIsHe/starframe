@@ -13,6 +13,10 @@ const UNIVERSE_SYSTEMS = (
 
 const UNIVERSE_OBSERVERS = UNIVERSE_SYSTEMS.filter((_, position) => position % 211 === 0);
 
+// A straight edge is emitted as several great-circle segments, so the drawn count is a multiple of
+// the edge count rather than equal to it.
+const MAX_SEGMENTS_PER_EDGE = 12;
+
 const systems = [
   { id: 1, constellationId: 10, position: [0, 0, 0] as [number, number, number] },
   { id: 2, constellationId: 10, position: [2, 0, 0] as [number, number, number] },
@@ -189,7 +193,7 @@ describe("Glyph Shape stability", () => {
       for (const frame of frames) {
         const current = frame
           .find((glyph) => glyph.constellationId === constellationId)!
-          .strokes.filter((stroke) => stroke.kind === "figure")
+          .strokes.filter((stroke) => stroke.kind !== "lead")
           .map((stroke) => stroke.from);
 
         if (previous && previous.length > 0 && current.length > 0) {
@@ -203,6 +207,50 @@ describe("Glyph Shape stability", () => {
         previous = current;
       }
     }
+  });
+});
+
+describe("Glyph Hidden Lines", () => {
+  // What the body is for: a figure that hides its own far side reads as an object, and the side it
+  // shows has to be decided by where the pilot's Solar System is - never by where the camera looks,
+  // which would put parallax inside a stationary view.
+  it("shows a different side of the same fixed object from a different Solar System", () => {
+    const index = compileConstellationGlyphIndex(UNIVERSE_SYSTEMS);
+    // Two Solar Systems of one Constellation look out on nearly the same sky, so they share glyphs
+    // to compare - and stand far enough apart to see them from different sides.
+    const first = UNIVERSE_OBSERVERS[0];
+    const second = UNIVERSE_SYSTEMS.find((system) => system.constellationId === first.constellationId && system.id !== first.id)!;
+
+    const drawnBy = (observerId: number) =>
+      new Map(projectConstellationGlyphs(index, observerId).map((glyph) => [
+        glyph.constellationId,
+        glyph.strokes.filter((stroke) => stroke.kind !== "lead"),
+      ]));
+
+    const here = drawnBy(first.id);
+    const there = drawnBy(second.id);
+    const shared = [...here.keys()].filter((constellationId) => there.has(constellationId) && constellationId !== first.constellationId);
+    expect(shared.length).toBeGreaterThan(0);
+
+    let turned = 0;
+    for (const constellationId of shared) {
+      const edges = index.shapeByConstellation.get(constellationId)!.solids.reduce((total, solid) => total + solid.edges.length, 0);
+
+      // Part of the body is always missing - that is the far side - and never all of it.
+      expect(here.get(constellationId)!.length).toBeGreaterThan(0);
+      expect(here.get(constellationId)!.length).toBeLessThan(edges * MAX_SEGMENTS_PER_EDGE);
+      if (here.get(constellationId)!.length !== there.get(constellationId)!.length) turned += 1;
+    }
+    expect(turned).toBeGreaterThan(0);
+  });
+
+  it("never moves a vertex to do it", () => {
+    const index = compileConstellationGlyphIndex(UNIVERSE_SYSTEMS);
+    const before = [...index.shapeByConstellation].map(([id, shape]) => [id, shape.solids.map((solid) => solid.vertices)] as const);
+
+    for (const observer of UNIVERSE_OBSERVERS) projectConstellationGlyphs(index, observer.id);
+
+    for (const [id, vertices] of before) expect(index.shapeByConstellation.get(id)!.solids.map((solid) => solid.vertices)).toEqual(vertices);
   });
 });
 

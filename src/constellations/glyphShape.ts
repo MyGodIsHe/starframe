@@ -1,4 +1,5 @@
 import type { Vector3 } from "../universe/generateUniverse";
+import { buildPrism, isClosedStroke, mapSolid, type GlyphSolid, type SolidPoint } from "./glyphSolid";
 import { fitFigure, type SigilFigure } from "./sigilFigure";
 
 // A Constellation Glyph as a fixed object in space.
@@ -9,18 +10,36 @@ import { fitFigure, type SigilFigure } from "./sigilFigure";
 // owns - the best-fit plane through its own Solar Systems - and the result is a fixed set of 3D
 // points. Travel then changes only the projection, which is what gives a glyph its volume: it is
 // one object seen from somewhere else, not a new drawing.
+//
+// The fit itself stays flat, in the plane the constellation most nearly lies in, because that is
+// where the real Solar Systems are and where the anchors must land. Volume is given afterwards: a
+// closed outline becomes a body standing through that plane, with the stars at its waist, and the
+// figure's open lines are struck on the body's near and far faces. Only then can a glyph hide its
+// own far side, which is what tells a pilot they are looking at a thing and not at a sprite.
 
 export type GlyphShapeStroke = {
   kind: "figure" | "lead";
+  /**
+   * Which face of the body this line is struck on: `1` the near cap, `-1` the far cap, `0` the
+   * waist, where the real Solar Systems and their Glyph Leads are. A line on a cap is drawn only
+   * while that cap faces the observer.
+   */
+  side: 1 | 0 | -1;
   /** Absolute SDE positions, in metres. */
   points: readonly Vector3[];
 };
 
 export type GlyphShape = {
+  /**
+   * The bodies the figure's closed outlines stand for, in absolute space. Their edges are most of
+   * the drawing; which of those edges an observer can see is decided per observer, per frame, and
+   * never changes a vertex.
+   */
+  solids: readonly GlyphSolid[];
   strokes: readonly GlyphShapeStroke[];
   /** Centre of the constellation's own frame, in absolute SDE positions. */
   centre: Vector3;
-  /** Normal of the plane the figure was laid out on: the direction it faces. */
+  /** Normal of the plane the figure was laid out on: the direction its near cap faces. */
   normal: Vector3;
   /** Distance from the centre to the farthest member, in metres. */
   radius: number;
@@ -36,11 +55,17 @@ type ShapeSystem = {
 const GALACTIC_UP: Vector3 = [0, 1, 0];
 const DEGENERATE = 1e-9;
 
-// How far the figure may lift off its own plane, as a fraction of the constellation's radius. The
-// relief comes from the real out-of-plane offsets of the Solar Systems, so a flat constellation
-// gives a flat figure and a deep one gives a figure with real depth - but a single far-flung system
-// must not spike the artwork into a needle.
-const MAX_RELIEF = 0.6;
+// Half the body's thickness, as a fraction of the constellation's radius.
+//
+// The depth is authored, not measured, and that is a deliberate change: real constellations are
+// flatter than they look - the out-of-plane spread of their Solar Systems is a median 0.126 of
+// their radius across the whole SDE build - so taking the thickness from the data gives every
+// figure a slab too thin to read as a body from any angle. The proportion is therefore the
+// artwork's, and the data sets only where inside a narrow band each constellation falls: a
+// genuinely flat one still gets the shallower body, a deep one the fuller.
+const BASE_DEPTH = 0.45;
+const DEPTH_BAND = 0.18;
+const MEDIAN_SPREAD = 0.126;
 
 export function buildGlyphShape(input: readonly ShapeSystem[], figure: SigilFigure): GlyphShape | null {
   if (input.length < 2) return null;
@@ -73,35 +98,54 @@ export function buildGlyphShape(input: readonly ShapeSystem[], figure: SigilFigu
   const fitted = fitFigure(figure, chartPoints);
   if (fitted.strokes.length === 0) return null;
 
-  const reliefSamples = planar.map((point) => ({ x: point.x / radius, y: point.y / radius, z: point.z / radius }));
-  const reliefLimit = MAX_RELIEF;
+  const depth = bodyDepth(planar.map((point) => point.z / radius));
+  const toAbsolute = (point: SolidPoint): SolidPoint => [
+    centroid[0] + (frame.right[0] * point[0] + frame.up[0] * point[1] + frame.normal[0] * point[2]) * radius,
+    centroid[1] + (frame.right[1] * point[0] + frame.up[1] * point[1] + frame.normal[1] * point[2]) * radius,
+    centroid[2] + (frame.right[2] * point[0] + frame.up[2] * point[1] + frame.normal[2] * point[2]) * radius,
+  ];
+  const toDirection = (direction: SolidPoint): SolidPoint => [
+    frame.right[0] * direction[0] + frame.up[0] * direction[1] + frame.normal[0] * direction[2],
+    frame.right[1] * direction[0] + frame.up[1] * direction[1] + frame.normal[1] * direction[2],
+    frame.right[2] * direction[0] + frame.up[2] * direction[1] + frame.normal[2] * direction[2],
+  ];
 
-  const strokes = fitted.strokes.map((stroke): GlyphShapeStroke => ({
-    kind: stroke.kind,
-    points: stroke.points.map(([x, y]) => {
-      const z = Math.max(-reliefLimit, Math.min(reliefLimit, sampleRelief(reliefSamples, x, y)));
-      return [
-        centroid[0] + (frame.right[0] * x + frame.up[0] * y + frame.normal[0] * z) * radius,
-        centroid[1] + (frame.right[1] * x + frame.up[1] * y + frame.normal[1] * z) * radius,
-        centroid[2] + (frame.right[2] * x + frame.up[2] * y + frame.normal[2] * z) * radius,
-      ] as Vector3;
-    }),
-  }));
+  const solids: GlyphSolid[] = [];
+  const strokes: GlyphShapeStroke[] = [];
 
-  return { strokes, centre: centroid, normal: frame.normal, radius };
+  for (const stroke of fitted.strokes) {
+    // A Glyph Lead ties a real Solar System to the artwork, and the systems are at the waist, so a
+    // lead stays there too rather than being struck on a cap it has nothing to do with.
+    if (stroke.kind === "lead") {
+      strokes.push({ kind: "lead", side: 0, points: stroke.points.map((point) => toAbsolute([point[0], point[1], 0]) as Vector3) });
+      continue;
+    }
+
+    const solid = isClosedStroke(stroke.points) ? buildPrism(stroke.points, depth) : null;
+    if (solid) {
+      solids.push(mapSolid(solid, toAbsolute, toDirection));
+      continue;
+    }
+
+    // An open line carries no body of its own, so it is struck on both caps: the near copy reads as
+    // detail on the side facing the pilot, and the far one is hidden behind the body with the rest
+    // of the far side.
+    for (const side of [1, -1] as const) {
+      strokes.push({ kind: "figure", side, points: stroke.points.map((point) => toAbsolute([point[0], point[1], side * depth]) as Vector3) });
+    }
+  }
+
+  if (solids.length === 0 && strokes.every((stroke) => stroke.kind === "lead")) return null;
+  return { solids, strokes, centre: centroid, normal: frame.normal, radius };
 }
 
-// The figure lifts off its plane by however much the Solar Systems around it do, so its relief is
-// the constellation's own three-dimensional shape rather than an invented bulge.
-function sampleRelief(samples: readonly { x: number; y: number; z: number }[], x: number, y: number): number {
-  let weighted = 0;
+// Where in the allowed band this constellation's body falls, from how far its own Solar Systems sit
+// off the plane they were fitted in.
+function bodyDepth(offsets: readonly number[]): number {
   let total = 0;
-  for (const sample of samples) {
-    const weight = 1 / (0.05 + (sample.x - x) ** 2 + (sample.y - y) ** 2);
-    weighted += sample.z * weight;
-    total += weight;
-  }
-  return total === 0 ? 0 : weighted / total;
+  for (const offset of offsets) total += (offset * offset) / offsets.length;
+  const spread = Math.sqrt(total);
+  return Math.max(BASE_DEPTH - DEPTH_BAND, Math.min(BASE_DEPTH + DEPTH_BAND, (BASE_DEPTH * spread) / MEDIAN_SPREAD));
 }
 
 type PlaneFrame = { right: Vector3; up: Vector3; normal: Vector3 };

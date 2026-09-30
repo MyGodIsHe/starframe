@@ -2,6 +2,7 @@ import { travelSkyProgress, type TravelFrame } from "../travelCoordinates";
 import type { Vector3 } from "../universe/generateUniverse";
 import { boundsOf, selectVisibleConstellationIds, type GlyphBounds } from "./glyphVisibility";
 import { buildGlyphShape, type GlyphShape } from "./glyphShape";
+import { classifyEdges } from "./glyphSolid";
 import { figureForConstellation } from "./sigilMotifs";
 
 export const CELESTIAL_MAP_RADIUS = 24;
@@ -41,10 +42,14 @@ export type ConstellationGlyphNode = {
   proximity: number;
 };
 
-// One drawn line of a glyph. "figure" is the authored artwork; "lead" is the short tie from a real
-// Solar System to it. Neither ever stands for a Stargate link.
+// One drawn line of a glyph.
+//
+// "silhouette" is where the body turns away from the observer and "interior" is an edge on its near
+// side; between them they are the authored artwork seen from somewhere, and an edge behind the body
+// is simply not here. "figure" is an open line struck on the body's near cap, "lead" the short tie
+// from a real Solar System. None of them ever stands for a Stargate link.
 export type ConstellationGlyphStroke = {
-  kind: GlyphShape["strokes"][number]["kind"];
+  kind: "silhouette" | "interior" | "figure" | "lead";
   from: Vector3;
   to: Vector3;
   opacity: number;
@@ -79,7 +84,11 @@ export function compileConstellationGlyphIndex(systems: readonly ConstellationSy
     const shape = figure && buildGlyphShape(members, figure);
     if (shape) shapeByConstellation.set(constellationId, shape);
 
-    const extent = [...members.map((member) => member.position), ...(shape?.strokes.flatMap((stroke) => stroke.points) ?? [])];
+    const extent = [
+      ...members.map((member) => member.position),
+      ...(shape?.strokes.flatMap((stroke) => stroke.points) ?? []),
+      ...(shape?.solids.flatMap((solid) => solid.vertices as readonly Vector3[]) ?? []),
+    ];
     const bounds = boundsOf(constellationId, extent);
     if (bounds) boundsByConstellation.set(constellationId, bounds);
   }
@@ -158,6 +167,11 @@ function projectGlyph(index: ConstellationGlyphIndex, observerPosition: Vector3,
 
 // The shape is fixed in space; only this projection moves. Travelling past a constellation turns
 // its figure the way passing a real object does, and nothing is refitted.
+//
+// Which edges survive is decided here too, and from the observer's Solar System rather than from
+// the camera. That is the whole reason a glyph can hide its own far side without breaking Glyph
+// Parallax: orbiting the camera cannot change a single line, and travelling between stars turns
+// the body and changes the outline. No vertex moves either way.
 function projectShape(
   shape: GlyphShape,
   observerPosition: Vector3,
@@ -169,32 +183,51 @@ function projectShape(
   const samples = systems.map((system, index) => ({ position: system.position, proximity: nodes[index].proximity }));
   const strokes: ConstellationGlyphStroke[] = [];
 
-  for (const stroke of shape.strokes) {
-    // Standing inside a constellation there is no figure to read, only the systems around you, so
-    // the home glyph keeps its ties to the stars and wears no artwork.
-    if (isHome && stroke.kind === "figure") continue;
+  const emit = (kind: ConstellationGlyphStroke["kind"], from: Vector3, to: Vector3): void => {
+    const segments = segmentCount(direction(from, observerPosition), direction(to, observerPosition));
+    for (let step = 0; step < segments; step += 1) {
+      const start = lerp(from, to, step / segments);
+      const end = lerp(from, to, (step + 1) / segments);
+      strokes.push({
+        kind,
+        from: onCelestialSphere(start, observerPosition),
+        to: onCelestialSphere(end, observerPosition),
+        opacity,
+        proximity: (sampleProximity(samples, start) + sampleProximity(samples, end)) / 2,
+      });
+    }
+  };
 
-    for (let index = 0; index + 1 < stroke.points.length; index += 1) {
-      const from = stroke.points[index];
-      const to = stroke.points[index + 1];
-      const segments = segmentCount(direction(from, observerPosition), direction(to, observerPosition));
-
-      for (let step = 0; step < segments; step += 1) {
-        const start = lerp(from, to, step / segments);
-        const end = lerp(from, to, (step + 1) / segments);
-
-        strokes.push({
-          kind: stroke.kind,
-          from: onCelestialSphere(start, observerPosition),
-          to: onCelestialSphere(end, observerPosition),
-          opacity,
-          proximity: (sampleProximity(samples, start) + sampleProximity(samples, end)) / 2,
-        });
+  // Standing inside a constellation there is no figure to read, only the systems around you, so the
+  // home glyph keeps its ties to the stars and wears no artwork.
+  if (!isHome) {
+    for (const solid of shape.solids) {
+      const visibility = classifyEdges(solid, observerPosition);
+      for (const [index, edge] of solid.edges.entries()) {
+        if (visibility[index] === "hidden") continue;
+        emit(visibility[index], solid.vertices[edge.from] as Vector3, solid.vertices[edge.to] as Vector3);
       }
     }
   }
 
+  const nearCapFaces = facesObserver(shape, observerPosition);
+  for (const stroke of shape.strokes) {
+    if (isHome && stroke.kind === "figure") continue;
+    // A line struck on the cap turned away from the observer is behind the body, like any other
+    // far-side edge.
+    if (stroke.side !== 0 && (stroke.side === 1) !== nearCapFaces) continue;
+    for (let index = 0; index + 1 < stroke.points.length; index += 1) emit(stroke.kind, stroke.points[index], stroke.points[index + 1]);
+  }
+
   return strokes;
+}
+
+function facesObserver(shape: GlyphShape, observerPosition: Vector3): boolean {
+  return (
+    shape.normal[0] * (observerPosition[0] - shape.centre[0]) +
+    shape.normal[1] * (observerPosition[1] - shape.centre[1]) +
+    shape.normal[2] * (observerPosition[2] - shape.centre[2])
+  ) > 0;
 }
 
 // A stroke's depth cue comes from the real Solar Systems it runs past, weighted by how closely it

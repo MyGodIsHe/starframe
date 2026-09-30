@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { buildGlyphShape } from "./glyphShape";
+import { buildGlyphShape, type GlyphShape } from "./glyphShape";
 import type { SigilFigure } from "./sigilFigure";
 import type { Vector3 } from "../universe/generateUniverse";
 
+// A closed head over an open shaft, the way every figure in the library is built: the closed
+// outline becomes the body and the open line is struck on its caps.
 const FIGURE: SigilFigure = {
   name: "arrow",
-  strokes: [[[0, -1], [0, 1]], [[-0.4, 0.5], [0, 1], [0.4, 0.5]]],
+  strokes: [[[0, -1], [0, 0.5]], [[-0.4, 0.5], [0, 1], [0.4, 0.5], [-0.4, 0.5]]],
   anchors: [[0, 1], [0, -1], [-0.4, 0.5], [0.4, 0.5]],
 };
 
@@ -24,8 +26,27 @@ const DEEP = FLAT.map((system, index) => ({
   position: [system.position[0], system.position[1], (index % 2 === 0 ? 1 : -1) * 5e15] as Vector3,
 }));
 
-function allPoints(shape: { strokes: readonly { points: readonly Vector3[] }[] }): Vector3[] {
-  return shape.strokes.flatMap((stroke) => [...stroke.points]);
+function allPoints(shape: GlyphShape): Vector3[] {
+  return [
+    ...shape.strokes.flatMap((stroke) => [...stroke.points]),
+    ...shape.solids.flatMap((solid) => solid.vertices.map((vertex) => [...vertex] as Vector3)),
+  ];
+}
+
+// How thick the bodies stand through the plane they were fitted in, as a share of the
+// constellation's own radius.
+function bodyThickness(shape: GlyphShape): number {
+  let least = Infinity;
+  let most = -Infinity;
+  for (const solid of shape.solids) {
+    for (const vertex of solid.vertices) {
+      const offset = [0, 1, 2].map((axis) => vertex[axis] - shape.centre[axis]);
+      const along = offset[0] * shape.normal[0] + offset[1] * shape.normal[1] + offset[2] * shape.normal[2];
+      least = Math.min(least, along);
+      most = Math.max(most, along);
+    }
+  }
+  return Number.isFinite(least) ? (most - least) / shape.radius : 0;
 }
 
 function planeResiduals(points: readonly Vector3[]): number {
@@ -66,12 +87,16 @@ describe("buildGlyphShape", () => {
     }
   });
 
-  it("takes its relief from the constellation: a flat one stays flat, a deep one gains volume", () => {
-    const flat = planeResiduals(allPoints(buildGlyphShape(FLAT, FIGURE)!));
-    const deep = planeResiduals(allPoints(buildGlyphShape(DEEP, FIGURE)!));
+  it("gives the figure a body to hide behind, deeper for a deeper constellation", () => {
+    const flat = bodyThickness(buildGlyphShape(FLAT, FIGURE)!);
+    const deep = bodyThickness(buildGlyphShape(DEEP, FIGURE)!);
 
-    expect(flat).toBeLessThan(0.02);
-    expect(deep).toBeGreaterThan(0.1);
+    // Real constellations are far too flat to supply the depth themselves - a median 0.126 of their
+    // radius - so the proportion is the artwork's and every figure gets a body. What the data still
+    // decides is where inside the allowed band a constellation falls.
+    expect(flat).toBeGreaterThan(0.2);
+    expect(deep).toBeGreaterThan(flat);
+    expect(planeResiduals(allPoints(buildGlyphShape(FLAT, FIGURE)!))).toBeGreaterThan(0.1);
   });
 
   it("never lets one far-flung system spike the artwork into a needle", () => {
