@@ -10,7 +10,6 @@ import { glyphBucketStyles, glyphStrokeIntensity, writeGlyphColor, GLYPH_BUCKET_
 import { TRAVEL_DURATION, type TravelFrame } from "../travelCoordinates";
 import { assignGlyphColors } from "./glyphColoring";
 import {
-  GLYPH_STAR_SPIKE_COUNT,
   GLYPH_STAR_SPIKE_REACH_MAX,
   GLYPH_STAR_SPIKE_REACH_MIN,
   GLYPH_STAR_TWINKLE_PERIOD_SECONDS,
