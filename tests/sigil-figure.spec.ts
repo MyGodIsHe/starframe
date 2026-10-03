@@ -54,6 +54,24 @@ test("turns to the other generated figures the library ships", async ({ page }) 
   // anchors are always out of sight.
   await expect(scene).toHaveAttribute("data-sigil-anchors-in-sight", /^[1-4]$/);
   await expect(scene).toHaveAttribute("data-sigil-outline-count", /[1-9]\d*/);
+
+  await page.getByRole("link", { name: "Gear" }).click();
+
+  await expect(page.getByRole("heading", { name: "Gear" })).toBeVisible();
+  await expect(scene).toHaveAttribute("data-sigil-figure", "gear");
+  // A toothed plate: its anchors stand on tooth tips on both faces, so the plate itself covers some
+  // of them from wherever the observer is standing.
+  await expect(scene).toHaveAttribute("data-sigil-anchors-in-sight", /^[1-3]$/);
+  await expect(scene).toHaveAttribute("data-sigil-outline-count", /[1-9]\d*/);
+
+  await page.getByRole("link", { name: "Diamond" }).click();
+
+  await expect(page.getByRole("heading", { name: "Diamond" })).toBeVisible();
+  await expect(scene).toHaveAttribute("data-sigil-figure", "diamond");
+  // A cut stone is convex, so nothing of it is ever seen through it: the anchors on its far side
+  // are behind the body itself, and only the ones facing the observer are left.
+  await expect(scene).toHaveAttribute("data-sigil-anchors-in-sight", /^[1-4]$/);
+  await expect(scene).toHaveAttribute("data-sigil-outline-count", /[1-9]\d*/);
 });
 
 test("turns the figure when the observer walks round it", async ({ page }) => {

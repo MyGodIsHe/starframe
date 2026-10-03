@@ -141,6 +141,7 @@ describe("buildAtom", () => {
 
   it("marks the rails that run the whole way round each shell, and nothing on the core", () => {
     expect(raw.drawn).toHaveLength(ATOM.shells * ATOM.shell.around * Math.ceil(ATOM.shell.through / ATOM.shell.railStep));
+    expect(ATOM.shell.railStep).toBe(1);
     for (const [from, to] of raw.drawn) expect(bodyOf(from)).toBe(bodyOf(to));
     expect(raw.drawn.some(([from]) => bodyOf(from) === ATOM.shells)).toBe(false);
   });

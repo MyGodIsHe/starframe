@@ -32,10 +32,10 @@ import { add, cross, intoFigureSpace, length, scale, subtract, unit } from "./si
 // of them would leave through the other. Each hole therefore closes on a shallow cone a little under
 // the surface. It is as much a closed body as the rest, and reads as half of a bubble from any angle.
 //
-// What is marked as the drawing is the rim of each face and the rim of every hole. Nothing is
-// marked down a bore, into a pocket or across the material: every face of the slice is flat, so
-// every other edge is either the outline, which is found from wherever the observer stands, or the
-// triangulation, which was never part of the drawing.
+// What is marked as the drawing is the rim of each face, the rim of every hole, and the three real
+// corners of the wedge carried through its thickness. Those corners keep the apex and the ends of
+// the rind readable from a narrow view; the body's own occlusion hides their far copies. Nothing is
+// marked down a bore, into a pocket or along an intermediate site of the surface lattice.
 //
 // Where a real Solar System lands is where the slice reaches farthest: the apex, and the three
 // points of the arc - its two ends and its middle. Each of those stands on both faces, a thickness
@@ -243,6 +243,18 @@ export function buildCheese(options: CheeseOptions = CHEESE) {
     // The rim of a face is a line of the figure whether a pocket took the skin behind it or not:
     // where a pocket did, the same edge is the lip of its own block.
     drawn.push([near(0), far(0)], [near(LEVELS), far(LEVELS)]);
+  }
+
+  // The surface lattice has many rails through the thickness, but only these three are corners of
+  // the subject rather than construction lines: the apex and the two ends of the rind.
+  for (const corner of [
+    { ring: 0, column: 0 },
+    { ring: outermost, column: 0 },
+    { ring: outermost, column: columns },
+  ]) {
+    for (let level = 0; level < LEVELS; level += 1) {
+      drawn.push([at({ ...corner, level }), at({ ...corner, level: level + 1 })]);
+    }
   }
 
   return {

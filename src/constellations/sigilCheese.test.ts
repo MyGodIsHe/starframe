@@ -268,7 +268,16 @@ describe("buildCheese", () => {
   });
 
   it("marks the rim of every face and every hole, and nothing across the material", () => {
-    expect(raw.drawn).toHaveLength(2 * rim.length + CORNERS);
+    expect(raw.drawn).toHaveLength(2 * rim.length + CORNERS + 3 * LEVELS);
+    const cornersThroughThickness = raw.drawn.filter(([from, to]) => {
+      const near = authored(raw.vertices[from]);
+      const far = authored(raw.vertices[to]);
+      return Math.abs(near[0] - far[0]) < 1e-9 && Math.abs(near[1] - far[1]) < 1e-9 && Math.abs(near[2] - far[2]) > 1e-9;
+    });
+
+    // Only the wedge's three real corners run through its thickness. The intermediate lattice
+    // sites still hold the surface together without drawing stripes across either cut.
+    expect(cornersThroughThickness).toHaveLength(3 * LEVELS);
     for (const [from, to] of raw.drawn) {
       const near = authored(cheese.solid.vertices[from]);
       const far = authored(cheese.solid.vertices[to]);
@@ -276,7 +285,8 @@ describe("buildCheese", () => {
       // round the mouth of one hole. Nothing is marked down a bore, into a pocket or across a face.
       const alongASide = SIDES.some((side) => Math.abs(past(side, near)) < 1e-9 && Math.abs(past(side, far)) < 1e-9);
 
-      expect(alongASide || hollows.some((hollow) => onMouth(hollow, near) && onMouth(hollow, far))).toBe(true);
+      const throughACorner = Math.abs(near[0] - far[0]) < 1e-9 && Math.abs(near[1] - far[1]) < 1e-9;
+      expect(alongASide || throughACorner || hollows.some((hollow) => onMouth(hollow, near) && onMouth(hollow, far))).toBe(true);
     }
     for (const hollow of hollows) {
       expect(raw.drawn.filter(([from, to]) => [from, to].every((vertex) => onMouth(hollow, authored(cheese.solid.vertices[vertex]))))).toHaveLength(hollow.rim.length);

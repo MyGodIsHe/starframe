@@ -108,6 +108,8 @@ export function drawnEdges(solid: GlyphSolid, observer: SolidPoint): DrawnEdge[]
 
   for (const edge of solid.edges) {
     const seen = edgeVisibility(frontFacing, edge);
+    // Manual marking says that an edge belongs to the drawing; it does not make the reverse of the
+    // body transparent. Two turned-away faces still put their shared edge on the far side.
     if (seen === "hidden") continue;
     // A marked crease is a line of the figure and is drawn wherever it can be seen. An unmarked edge
     // is only ever here because the body turns away along it, and then only on the outline.

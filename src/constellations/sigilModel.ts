@@ -2,7 +2,9 @@ import { buildModelSolid, type GlyphSolid, type SolidPoint } from "./glyphSolid"
 import { buildAtom } from "./sigilAtom";
 import { buildBolt } from "./sigilBolt";
 import { buildCheese } from "./sigilCheese";
+import { buildDiamond } from "./sigilDiamond";
 import { framingsFor, type FitPoint, type Placement } from "./sigilFit";
+import { buildGear } from "./sigilGear";
 import { buildHammer } from "./sigilHammer";
 import { buildRing } from "./sigilRing";
 
@@ -74,11 +76,13 @@ export function readSigilModel(raw: unknown): SigilModel | null {
 
 // The sculpted bodies this build ships with.
 //
-// Five generated ones - a bolt, an atom, a ring, a hammer and a wedge of cheese - because each is a
-// subject a rule describes exactly rather than approximately: a zigzag forged as a bar, a core with
-// two shells set square to each other, a torus of two radii and two counts, a block lofted along the
-// axis it strikes on and hafted on a grip, a circular sector with shallow holes in its sides. None
-// of them costs anybody's work, and all five go through the same door an imported model does.
+// Seven generated ones - a bolt, an atom, a ring, a hammer, a wedge of cheese, a gear and a
+// diamond - because each is a subject a rule describes exactly rather than approximately: a zigzag
+// forged as a bar, a core with two shells set square to each other, a torus of two radii and two
+// counts, a block lofted along the axis it strikes on and hafted on a grip, a circular sector with
+// shallow holes in its sides, a plate with an exact count of equal teeth round it and a bore
+// through its middle, a stone cut to the fifty-seven flat facets a round brilliant is specified by.
+// None of them costs anybody's work, and all seven go through the same door an imported model does.
 //
 // No imported model is committed. One is a reduction of somebody else's sculpture, and whoever made
 // it decides whether it may be redistributed - which is not a question a star map should answer on
@@ -90,7 +94,7 @@ export function readSigilModel(raw: unknown): SigilModel | null {
 //   const IMPORTED: readonly unknown[] = [wolf];
 const IMPORTED: readonly unknown[] = [];
 
-export const SIGIL_MODELS: readonly SigilModel[] = [buildBolt(), buildAtom(), buildRing(), buildHammer(), buildCheese(), ...IMPORTED].flatMap((raw) => {
+export const SIGIL_MODELS: readonly SigilModel[] = [buildBolt(), buildAtom(), buildRing(), buildHammer(), buildCheese(), buildGear(), buildDiamond(), ...IMPORTED].flatMap((raw) => {
   const model = readSigilModel(raw);
   return model ? [model] : [];
 });

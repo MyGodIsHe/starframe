@@ -28,9 +28,9 @@ generated universe dataset from `public/data/`.
 `/sigil.html` is a second page: one Sigil Figure on its own, which you turn by
 walking the observer round it. It is where a figure's body is judged, because the
 only question that matters for a body is whether it reads from every side. It opens
-on the bolt and also holds the atom, the ring, the hammer and the wedge of cheese -
-the five figures this repository generates for itself - and any figure imported into
-the library appears beside them.
+on the bolt and also holds the atom, the ring, the hammer, the wedge of cheese, the
+gear and the diamond - the seven figures this repository generates for itself - and
+any figure imported into the library appears beside them.
 
 ## Sigil Figures
 
@@ -39,8 +39,8 @@ far side for the glyph to hide. Every figure is therefore a sculpted model. Buil
 bodies out of flat line art was tried first and dropped: a drawing has to be given
 depth by rule, and every such rule is a guess about a shape nobody drew.
 
-A fresh clone has five figures, and every Constellation wears one of them. All
-five are generated, because each is a subject a rule describes exactly rather than
+A fresh clone has seven figures, and every Constellation wears one of them. All
+seven are generated, because each is a subject a rule describes exactly rather than
 approximately. The ring in `src/constellations/sigilRing.ts` is two radii and two
 counts. The atom in `src/constellations/sigilAtom.ts` is a core and two shells built
 out of that same tube, set square to each other so they cross at the widest angle
@@ -70,7 +70,22 @@ two radial cuts carries three holes of different sizes. Their positions differ b
 the cuts rather than forming mirrored pairs. Each closes on a shallow cone under the
 surface, which is what a cut through a bubble really shows, while the broad top and
 bottom remain solid. The holes are the reason it is in the library: an observer sees
-their lips and shallow walls appear as they travel around the slice.
+their lips and shallow walls appear as they travel around the slice. The gear in
+`src/constellations/sigilGear.ts` is a count of teeth and a handful of radii: a plate
+bored through its middle, with a tooth written about its own centre and repeated round
+the pitch an exact number of times, so the teeth are equal by construction rather than
+by arithmetic that could drift round the last of them. Eight square-shouldered teeth
+is what somebody draws when they draw a gear; thirty, at the size a Constellation
+Glyph is seen at, is a circle with a rough edge. The diamond in
+`src/constellations/sigilDiamond.ts` is a round brilliant, which was a specification
+before it was ever a shape: a table, eight bezels, eight star facets and sixteen upper
+girdle halves above the girdle, eight pavilion mains and sixteen lower halves below
+it, at the proportions a cutter holds to. Only the lengths are typed in. Every facet
+of a cut stone is flat, so the corners where neighbouring facets meet - the star tips,
+and the junctions under the girdle - are read off the planes of those facets rather
+than guessed, which is the difference between a stone and a cone with lines on it. It
+is the one convex body in the library: it never shows its own far side through itself,
+and what changes as a pilot travels is which of its creases face them.
 So none of them costs anybody's work. Every other subject needs a model, and **no
 imported model is committed to this repository** - a model is somebody else's sculpture, and whether
 it may be redistributed is their decision rather than a star map's. Importing one is

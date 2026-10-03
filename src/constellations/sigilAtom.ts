@@ -41,8 +41,9 @@ export const ATOM: AtomOptions = {
   shells: 2,
   core: 0.32,
   // Thin, because a shell is one orbit and not a band, and finely stepped, because a tube this
-  // narrow has no facets left to read.
-  shell: { around: 16, through: 3, thickness: 0.035, railStep: 3 },
+  // narrow has no facets left to read. All three longitudinal rails belong to the drawing: with
+  // only one marked, a shell seen narrowly broke into unrelated fragments between silhouettes.
+  shell: { around: 16, through: 3, thickness: 0.035, railStep: 1 },
   anchors: 6,
 };
 
