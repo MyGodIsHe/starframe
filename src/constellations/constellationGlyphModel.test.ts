@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CELESTIAL_MAP_RADIUS, compileConstellationGlyphIndex, projectConstellationGlyphs, projectTravelConstellationGlyphs } from "./constellationGlyphModel";
-import { clearsFootprint, computeGlyphFootprint } from "./glyphVisibility";
+import { boundsOf, clearsFootprint, computeGlyphFootprint } from "./glyphVisibility";
 
 // The real SDE build, so visibility assertions hold against the universe players actually fly in
 // rather than a hand-picked arrangement: 5485 Solar Systems across 799 Constellations.
@@ -65,6 +65,27 @@ describe("projectConstellationGlyphs", () => {
     expect(strokes.some((stroke) => stroke.capStart === true && stroke.capEnd === true)).toBe(true);
   });
 
+  it("does not draw ties from sigils to their constellation stars", () => {
+    const index = compileConstellationGlyphIndex(UNIVERSE_SYSTEMS);
+    const strokes = projectConstellationGlyphs(index, UNIVERSE_SYSTEMS[0].id).flatMap((glyph) => glyph.strokes);
+
+    expect(strokes.length).toBeGreaterThan(0);
+    expect(strokes.map((stroke) => stroke.kind)).not.toContain("lead");
+  });
+
+  it("keeps offline fitting leads out of the drawn glyph footprint", () => {
+    const index = compileConstellationGlyphIndex(UNIVERSE_SYSTEMS);
+
+    for (const [constellationId, shape] of index.shapeByConstellation) {
+      const members = index.systemsByConstellation.get(constellationId)!;
+      const drawnExtent = [
+        ...members.map((member) => member.position),
+        ...shape.solids.flatMap((solid) => solid.vertices.map((vertex) => [...vertex] as [number, number, number])),
+      ];
+      expect(index.boundsByConstellation.get(constellationId)).toEqual(boundsOf(constellationId, drawnExtent));
+    }
+  });
+
   it("keeps topology continuous through travel while blending origin and destination contexts", () => {
     // Origin and destination are 1.2e17 apart - further than NEARBY_CONSTELLATION_RADIUS (1e17), so
     // their own home constellations are each only in range of one side of the trip; constellation 20
@@ -99,9 +120,7 @@ describe("projectConstellationGlyphs", () => {
     expect(shared.nodes.map((node) => node.systemId)).toEqual(
       stationary.find((glyph) => glyph.constellationId === 20)!.nodes.map((node) => node.systemId),
     );
-    // Artwork of any kind: a figure whose drawing is all closed outlines carries it as the body's
-    // own edges rather than as lines struck on a cap, and a glyph of nothing but leads is not one.
-    expect(shared.strokes.some((stroke) => stroke.kind !== "lead")).toBe(true);
+    expect(shared.strokes.length).toBeGreaterThan(0);
   });
 });
 
@@ -205,8 +224,7 @@ describe("Glyph Shape stability", () => {
       for (const frame of frames) {
         const current = frame
           .find((glyph) => glyph.constellationId === constellationId)!
-          .strokes.filter((stroke) => stroke.kind !== "lead")
-          .map((stroke) => stroke.from);
+          .strokes.map((stroke) => stroke.from);
 
         if (previous && previous.length > 0 && current.length > 0) {
           // Each point of the drawing stays near a point of the previous frame's drawing. A refit
@@ -231,7 +249,7 @@ describe("Glyph Hidden Lines", () => {
     const drawnBy = (observerId: number) =>
       new Map(projectConstellationGlyphs(index, observerId).map((glyph) => [
         glyph.constellationId,
-        glyph.strokes.filter((stroke) => stroke.kind !== "lead"),
+        glyph.strokes,
       ]));
 
     // Two Solar Systems of one Constellation look out on nearly the same sky, so they share glyphs

@@ -236,15 +236,14 @@ function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: Glyph
   for (const glyph of glyphs) {
     for (const stroke of glyph.strokes) {
       if (stroke.opacity <= 0.001) continue;
-      const isOrnament = stroke.kind === "lead";
       const bucketIndex = GLYPH_BUCKET_BY_KIND[stroke.kind];
       const bucket = state.buckets[bucketIndex];
       const strokeIndex = strokeCounts[bucketIndex];
       const offset = strokeIndex * 6;
       bucket.positions.set(stroke.from, offset);
       bucket.positions.set(stroke.to, offset + 3);
-      writeGlyphColor(bucket.colors, offset, stroke.proximity, isOrnament);
-      writeGlyphColor(bucket.colors, offset + 3, stroke.proximity, isOrnament);
+      writeGlyphColor(bucket.colors, offset, stroke.proximity);
+      writeGlyphColor(bucket.colors, offset + 3, stroke.proximity);
       const intensity = glyphStrokeIntensity(stroke.kind, stroke.opacity, stroke.proximity);
       bucket.opacityStart.setX(strokeIndex, intensity);
       bucket.opacityEnd.setX(strokeIndex, intensity);

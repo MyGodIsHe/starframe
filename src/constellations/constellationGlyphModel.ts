@@ -46,10 +46,9 @@ export type ConstellationGlyphNode = {
 //
 // "silhouette" is where the body turns away from the observer and "interior" is an edge on its near
 // side; between them they are the sculpted figure seen from somewhere, and an edge behind the body
-// is simply not here. "lead" is the short tie from a real Solar System the figure did not reach.
-// Neither ever stands for a Stargate link.
+// is simply not here. Neither ever stands for a Stargate link.
 export type ConstellationGlyphStroke = {
-  kind: "silhouette" | "interior" | "lead";
+  kind: "silhouette" | "interior";
   from: Vector3;
   to: Vector3;
   opacity: number;
@@ -90,7 +89,6 @@ export function compileConstellationGlyphIndex(systems: readonly ConstellationSy
 
     const extent = [
       ...members.map((member) => member.position),
-      ...(shape?.leads.flatMap((lead) => [lead.from, lead.to]) ?? []),
       ...(shape?.solids.flatMap((solid) => solid.vertices as readonly Vector3[]) ?? []),
     ];
     const bounds = boundsOf(constellationId, extent);
@@ -205,7 +203,7 @@ function projectShape(
   };
 
   // Standing inside a constellation there is no figure to read, only the systems around you, so the
-  // home glyph keeps its ties to the stars and wears no artwork.
+  // home glyph wears no artwork.
   if (!isHome) {
     for (const solid of shape.solids) {
       // A structural edge holds the surface together and still decides what it hides; it was never
@@ -213,8 +211,6 @@ function projectShape(
       for (const line of drawnEdges(solid, observerPosition)) emit(line.kind, line.from as Vector3, line.to as Vector3);
     }
   }
-
-  for (const lead of shape.leads) emit("lead", lead.from, lead.to);
 
   return strokes;
 }

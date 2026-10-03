@@ -44,8 +44,7 @@ const SKELETON_COLOUR = "#57d8f5";
 const ORNAMENT_COLOUR = "#8f93c4";
 const HOME_COLOUR = "#3b3f6b";
 
-// The drawing's own ladder, the same one the app renders: the outline where the body turns away,
-// then the edges on its near side, then the ties.
+// The drawing's own ladder, followed by fitting leads used only in this offline review sheet.
 const LINE_STYLE = {
   silhouette: { colour: SKELETON_COLOUR, weight: 1.5, opacity: 1 },
   interior: { colour: "#3ba6cc", weight: 0.9, opacity: 0.8 },
@@ -54,9 +53,8 @@ const LINE_STYLE = {
 
 type SheetLine = { kind: keyof typeof LINE_STYLE; points: Vector3[] };
 
-// What one observer actually sees of a glyph: the body's visible edges, plus the ties to the Solar
-// Systems it did not reach. Built from the same function the app calls, so the sheet cannot drift
-// away from what a pilot gets.
+// What one observer sees in the fitting review: the body's visible edges plus the offline leads to
+// Solar Systems it did not reach. The Celestial Map draws only the body's edges.
 function drawnLines(shape: GlyphShape, observer: Vector3): SheetLine[] {
   const lines: SheetLine[] = [];
 

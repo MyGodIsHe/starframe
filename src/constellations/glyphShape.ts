@@ -21,7 +21,7 @@ import type { SigilModel } from "./sigilModel";
 // The model's own x and y lie in the constellation's plane and its z stands through it, so a figure
 // faces the way its constellation does and keeps the galactic sense of up.
 
-/** A tie from a real Solar System to the drawing, in absolute SDE positions. */
+/** An offline fitting aid from a real Solar System to the drawing, in absolute SDE positions. */
 export type GlyphLead = { systemId: number; from: Vector3; to: Vector3 };
 
 export type GlyphShape = {
@@ -31,7 +31,7 @@ export type GlyphShape = {
    * vertex.
    */
   solids: readonly GlyphSolid[];
-  /** Ties for the Solar Systems no part of the figure reached. */
+  /** Fitting aids for offline review; the Celestial Map does not draw them. */
   leads: readonly GlyphLead[];
   /** Centre of the constellation's own frame, in absolute SDE positions. */
   centre: Vector3;
@@ -139,9 +139,9 @@ function turn(point: FitPoint, rotation: number): FitPoint {
   return [cos * point[0] - sin * point[1], sin * point[0] + cos * point[1]];
 }
 
-// Where a star's lead should land: the nearest point of the body seen flat on the chart. Every edge
-// is a candidate, structural ones included - a lead ties to the shape a pilot sees, and which edges
-// are drawn is not known until there is an observer.
+// Where an offline fitting lead should land: the nearest point of the body seen flat on the chart.
+// Every edge is a candidate, structural ones included, because this reviews placement rather than
+// the observer-dependent set of edges drawn on the Celestial Map.
 function nearestOnBody(star: FitPoint, solid: GlyphSolid, chartVertices: readonly SolidPoint[]): FitPoint | null {
   let best: FitPoint | null = null;
   let bestDistance = Infinity;

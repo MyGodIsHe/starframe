@@ -8,7 +8,7 @@
 // body, and a body cannot be stretched towards a star an anchor failed to reach without becoming a
 // different body from every other angle. The line art this replaced could be warped a little
 // because it was a drawing and a drawing has no far side; a model has one, so the fit either
-// reaches a star or leaves it to a Glyph Lead.
+// reaches a star or leaves an offline fitting lead for review.
 //
 // Everything here is in chart space, where the constellation's Solar Systems sit inside the unit
 // circle with the farthest one on it.
@@ -33,7 +33,7 @@ export const MAX_TILT = (24 * Math.PI) / 180;
 // Total reach allowed, matching what Glyph Occlusion reserves around the footprint.
 export const FIGURE_EXTENT = 1.35;
 
-// A star further than this from the drawing gets a lead line, so every Solar System is visibly part
+// A star further than this from the drawing gets a fitting lead for offline review
 // of the glyph even when no anchor reached it.
 export const LEAD_THRESHOLD = 0.06;
 

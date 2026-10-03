@@ -13,13 +13,11 @@ describe("glyphBucketStyles", () => {
     }
   });
 
-  it("keeps leads quieter than the figure and mobile glows tighter than desktop glows", () => {
+  it("keeps mobile glows tighter than desktop glows", () => {
     const desktop = glyphBucketStyles("desktop");
     const mobile = glyphBucketStyles("mobile");
-    const lead = GLYPH_BUCKET_BY_KIND.lead;
 
-    expect(desktop[lead].coreOpacity).toBeLessThan(desktop[GLYPH_BUCKET_BY_KIND.interior].coreOpacity);
-    expect(desktop[lead].outerWidth).toBeLessThan(desktop[GLYPH_BUCKET_BY_KIND.silhouette].outerWidth);
+    expect(desktop).toHaveLength(Object.keys(GLYPH_BUCKET_BY_KIND).length);
     for (let bucket = 0; bucket < desktop.length; bucket += 1) {
       expect(mobile[bucket].outerWidth).toBeLessThan(desktop[bucket].outerWidth);
     }

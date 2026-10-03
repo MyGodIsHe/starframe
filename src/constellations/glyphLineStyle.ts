@@ -4,9 +4,7 @@ import type { ConstellationGlyphStroke } from "./constellationGlyphModel";
 // The ladder a Constellation Glyph is drawn on, in one place.
 //
 // One bucket per kind of line, ordered the way the drawing reads: the outline where the body turns
-// away is the strongest and most haloed line, an edge on the near side is subordinate to it, and a
-// lead is barely there - a tie is bookkeeping, and it must never compete with either the artwork or
-// the stars themselves.
+// away is the strongest and most haloed line, and an edge on the near side is subordinate to it.
 //
 // The ladder used to run on depth instead, but a glyph's strokes nearly all share one depth: 77% of
 // drawn glyphs put every stroke in a single bucket, so the width and weight never varied inside a
@@ -18,10 +16,10 @@ import type { ConstellationGlyphStroke } from "./constellationGlyphModel";
 
 export type GlyphStrokeKind = ConstellationGlyphStroke["kind"];
 
-export const GLYPH_BUCKET_COUNT = 3;
-export const GLYPH_BUCKET_BY_KIND: Record<GlyphStrokeKind, number> = { interior: 0, silhouette: 1, lead: 2 };
-export const GLYPH_STROKE_FLOOR: Record<GlyphStrokeKind, number> = { silhouette: 0.62, interior: 0.42, lead: 0.26 };
-export const GLYPH_STROKE_DEPTH_GAIN: Record<GlyphStrokeKind, number> = { silhouette: 0.38, interior: 0.4, lead: 0.3 };
+export const GLYPH_BUCKET_COUNT = 2;
+export const GLYPH_BUCKET_BY_KIND: Record<GlyphStrokeKind, number> = { interior: 0, silhouette: 1 };
+export const GLYPH_STROKE_FLOOR: Record<GlyphStrokeKind, number> = { silhouette: 0.62, interior: 0.42 };
+export const GLYPH_STROKE_DEPTH_GAIN: Record<GlyphStrokeKind, number> = { silhouette: 0.38, interior: 0.4 };
 
 export type GlyphBucketStyle = {
   coreWidth: number;
@@ -34,14 +32,14 @@ export type GlyphBucketStyle = {
 
 // The outline carries the glow, so the halo climbs with the ladder instead of standing in for
 // distance.
-const CORE_OPACITIES = [0.76, 0.96, 0.34];
-const HALO_OPACITIES = [0.55, 0.75, 0.09];
-const OUTER_OPACITIES = [0.24, 0.34, 0.025];
+const CORE_OPACITIES = [0.76, 0.96];
+const HALO_OPACITIES = [0.55, 0.75];
+const OUTER_OPACITIES = [0.24, 0.34];
 
 export function glyphBucketStyles(profile: RenderQuality["name"]): GlyphBucketStyle[] {
-  const coreWidths = profile === "mobile" ? [0.8, 1.15, 0.42] : [1.05, 1.5, 0.55];
-  const haloWidths = profile === "mobile" ? [3.4, 4.5, 1.2] : [4.5, 6, 1.8];
-  const outerWidths = profile === "mobile" ? [8.5, 11, 2.8] : [12, 16, 4];
+  const coreWidths = profile === "mobile" ? [0.8, 1.15] : [1.05, 1.5];
+  const haloWidths = profile === "mobile" ? [3.4, 4.5] : [4.5, 6];
+  const outerWidths = profile === "mobile" ? [8.5, 11] : [12, 16];
   return Array.from({ length: GLYPH_BUCKET_COUNT }, (_, bucket) => ({
     coreWidth: coreWidths[bucket],
     haloWidth: haloWidths[bucket],
@@ -60,15 +58,11 @@ export function glyphStrokeIntensity(kind: GlyphStrokeKind, opacity: number, pro
 
 // Glyph Depth Cue as a colour: a stroke physically nearer the observer is sharper cyan, a distant
 // one violet.
-export function writeGlyphColor(target: Float32Array, offset: number, proximity: number, isOrnament = false): void {
+export function writeGlyphColor(target: Float32Array, offset: number, proximity: number): void {
   const red = 98 + (85 - 98) * proximity;
   const green = 91 + (223 - 91) * proximity;
   const blue = 220 + (255 - 220) * proximity;
-  // A lead line shares the depth ramp but sits closer to mid-grey, so it reads as a faint tie
-  // rather than as part of the drawing.
-  const mix = isOrnament ? 0.45 : 0;
-  const grey = (red + green + blue) / 3;
-  target[offset] = (red + (grey - red) * mix) / 255;
-  target[offset + 1] = (green + (grey - green) * mix) / 255;
-  target[offset + 2] = (blue + (grey - blue) * mix) / 255;
+  target[offset] = red / 255;
+  target[offset + 1] = green / 255;
+  target[offset + 2] = blue / 255;
 }

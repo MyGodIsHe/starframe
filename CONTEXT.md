@@ -23,8 +23,8 @@ A camera-centred projection of every New Eden Solar System onto the distant cele
 _Avoid_: local-system object, decorative background star
 
 **Constellation Glyph**:
-A holographic sigil standing in space where its Constellation is: the Sigil Figure its Sigil Motif names, laid out in the Glyph Frame so the figure's anchors fall on the real Solar Systems, with a Glyph Lead tying in every system the figure did not reach. The figure is authored art, as in a star atlas, so the lines are not derived from the positions - the placement is. Stargates select nothing and define no line.
-_Avoid_: Stargate graph, convex hull wireframe, a polygon drawn through the Solar Systems, enclosing volume, unconnected Solar System, partial glyph
+A holographic sigil standing in space where its Constellation is: the Sigil Figure its Sigil Motif names, laid out in the Glyph Frame so the figure's anchors fall on the real Solar Systems. Every member remains visible as its Celestial Map star, but no line ties the figure to those stars. The figure is authored art, as in a star atlas, so the lines are not derived from the positions - the placement is. Stargates select nothing and define no line.
+_Avoid_: Stargate graph, convex hull wireframe, a polygon drawn through the Solar Systems, enclosing volume, connector from the figure to a Solar System, partial glyph
 
 **Glyph Frame**:
 The Constellation's own coordinate frame, built once from the SDE build and never from an observer: the centre of its Solar Systems, the plane they most nearly lie in, and the galactic vertical laid into that plane as up. A glyph is laid out here and then stays put, so travel turns it rather than redrawing it, and its relief comes from how far its Solar Systems really sit off that plane.
@@ -47,7 +47,7 @@ The smallest Glyph Footprint radius still worth drawing. A Constellation below i
 _Avoid_: culling by distance, keeping a fixed top-N, fading small glyphs in and out
 
 **Glyph Integrity**:
-A Constellation Glyph is shown whole or not at all: opacity belongs to the glyph, not to its nodes, its figure or its leads. The single exception is the Solar System the observer is standing inside, which has no direction in the sky and hands off to the Solar System Map as the observer approaches it.
+A Constellation Glyph is shown whole or not at all: opacity belongs to the glyph, not to its nodes or its figure. The single exception is the Solar System the observer is standing inside, which has no direction in the sky and hands off to the Solar System Map as the observer approaches it.
 _Avoid_: fading one node, hiding one star behind another, a glyph missing its far side
 
 **Sigil Figure**:
@@ -57,10 +57,6 @@ _Avoid_: a body built out of flat line art by rule, a shape derived from Solar S
 **Sigil Motif**:
 Which Sigil Figure a Constellation wears, chosen from its real name and Region, together with the caption naming the idea.
 _Avoid_: a randomly picked figure, one figure shared by a whole Region, a choice that changes between sessions
-
-**Glyph Lead**:
-The short tie drawn from a real Solar System to the nearest point of its Sigil Figure, for any system an anchor did not reach. It is thinner, quieter and less saturated than the figure, and it never stands for a Stargate link.
-_Avoid_: an invented Solar System, a fabricated Stargate link, a lead as bright as the figure
 
 **Glyph Depth Cue**:
 The relative sharpness, brightness, width, and colour of a Constellation Glyph stroke. Strokes physically nearer to the observer are sharper cyan and overlap thinner violet distant ones; a Sigil Figure's strokes inherit the depth of the Solar Systems they run past. The same depth also sets the order Glyph Occlusion works in.
