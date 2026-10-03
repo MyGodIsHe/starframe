@@ -105,8 +105,10 @@ describe("the imported library", () => {
     expect(modelForFigure("bolt")).not.toBeNull();
     expect(modelForFigure("atom")).not.toBeNull();
     expect(modelForFigure("ring")).not.toBeNull();
+    expect(modelForFigure("hammer")).not.toBeNull();
+    expect(modelForFigure("cheese")).not.toBeNull();
     expect(modelForFigure("wolf")).toBeNull();
-    expect(SIGIL_MODELS.map((model) => model.name)).toEqual(["bolt", "atom", "ring"]);
+    expect(SIGIL_MODELS.map((model) => model.name)).toEqual(["bolt", "atom", "ring", "hammer", "cheese"]);
   });
 
   it("keeps every body closed and inside the figure's own space", () => {

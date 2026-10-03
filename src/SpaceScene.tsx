@@ -18,6 +18,7 @@ import type { AmbientFlightTrailPoint } from "./ambientFlightTrails";
 import { BattleFlareLayer } from "./BattleFlareLayer";
 import { BattleBeaconOverlay } from "./BattleBeaconOverlay";
 import { dampCameraState, orbitCameraPosition, type CameraState } from "./orbitCamera";
+import { planetAppearance, SCENE_PALETTE } from "./scenePalette";
 
 // Re-exported so the viewport's own camera stays one import for its callers.
 export { dampCameraState, orbitCameraPosition, type CameraState };
@@ -321,11 +322,11 @@ function GateMarker({ gate, active, onActivate, onHoverChange, segments, groupRe
       </mesh>
       <mesh raycast={() => null}>
         <coneGeometry args={[0.2, 0.72, Math.max(6, Math.floor(segments / 2))]} />
-        <meshBasicMaterial color={active ? "#ffe0a1" : "#8fbce8"} transparent opacity={0.92} depthWrite={false} />
+        <meshBasicMaterial color={active ? SCENE_PALETTE.gate.active : SCENE_PALETTE.gate.idle} transparent opacity={0.92} depthWrite={false} />
       </mesh>
       <mesh raycast={() => null} rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[0.34, 0.035, Math.max(6, Math.floor(segments / 2)), segments]} />
-        <meshBasicMaterial color={active ? "#ffe0a1" : "#8fbce8"} transparent opacity={0.72} depthWrite={false} />
+        <meshBasicMaterial color={active ? SCENE_PALETTE.gate.active : SCENE_PALETTE.gate.idle} transparent opacity={0.72} depthWrite={false} />
       </mesh>
     </group>
   );
@@ -426,6 +427,7 @@ function Planets({ planets, subdued, quality, travelling }: { planets: LocalSyst
 function Planet({ planet, trailPlanets, subdued, quality, markerRefs }: { planet: LocalSystemProjection["planets"][number]; trailPlanets: OrbitTrailPlanet[]; subdued: boolean; quality: RenderQuality; markerRefs: MutableRefObject<Map<number, Mesh>> }): ReactNode {
   const position = new Vector3(...planet.scenePosition);
   const trail = calculateOrbitTrail(toOrbitTrailPlanet(planet), trailPlanets, quality.trailSegments);
+  const appearance = planetAppearance(planet.physical.typeId);
 
   return (
     <>
@@ -433,10 +435,10 @@ function Planet({ planet, trailPlanets, subdued, quality, markerRefs }: { planet
         {planet.sceneRadius > 0 && (
           <mesh scale={planet.sceneRadius}>
             <sphereGeometry args={[1, quality.planetSegments, quality.planetSegments]} />
-            <meshStandardMaterial color="#7185a3" emissive="#18243a" emissiveIntensity={subdued ? 0.12 : 0.3} roughness={0.9} transparent opacity={subdued ? 0.45 : 1} />
+            <meshStandardMaterial color={appearance.surface} emissive={appearance.emissive} emissiveIntensity={subdued ? 0.12 : 0.3} roughness={0.9} transparent opacity={subdued ? 0.45 : 1} />
           </mesh>
         )}
-        <PlanetMarker id={planet.physical.id} subdued={subdued} segments={quality.planetMarkerSegments} markerRefs={markerRefs} />
+        <PlanetMarker id={planet.physical.id} color={appearance.marker} subdued={subdued} segments={quality.planetMarkerSegments} markerRefs={markerRefs} />
       </group>
       <OrbitTrail trail={trail} subdued={subdued} />
       <OrbitContext orbit={planet.orbit} segments={quality.orbitSegments} />
@@ -450,7 +452,7 @@ function OrbitTrail({ trail, subdued }: { trail: ReturnType<typeof calculateOrbi
       <bufferGeometry>
         <bufferAttribute attach="attributes-position" args={[new Float32Array(trail.points.flat()), 3]} />
       </bufferGeometry>
-      <lineBasicMaterial color="#8fbce8" transparent opacity={subdued ? trail.opacity * 0.45 : trail.opacity} depthWrite={false} />
+      <lineBasicMaterial color={SCENE_PALETTE.orbit.trail} transparent opacity={subdued ? trail.opacity * 0.45 : trail.opacity} depthWrite={false} />
     </line>
   );
 }
@@ -460,12 +462,12 @@ function OrbitContext({ orbit, segments }: { orbit: LocalSystemProjection["plane
   return (
     <mesh quaternion={new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), new Vector3(...orbit.sceneNormal))} scale={[semiMajorAxis, semiMinorAxis, 1]}>
       <ringGeometry args={[0.994, 1.006, segments]} />
-      <meshBasicMaterial color="#789cc4" transparent opacity={0.28} side={2} depthWrite={false} />
+      <meshBasicMaterial color={SCENE_PALETTE.orbit.context} transparent opacity={0.24} side={2} depthWrite={false} />
     </mesh>
   );
 }
 
-function PlanetMarker({ id, subdued, segments, markerRefs }: { id: number; subdued: boolean; segments: number; markerRefs: MutableRefObject<Map<number, Mesh>> }): ReactNode {
+function PlanetMarker({ id, color, subdued, segments, markerRefs }: { id: number; color: string; subdued: boolean; segments: number; markerRefs: MutableRefObject<Map<number, Mesh>> }): ReactNode {
   return (
     <mesh
       ref={(mesh) => {
@@ -474,7 +476,7 @@ function PlanetMarker({ id, subdued, segments, markerRefs }: { id: number; subdu
       }}
     >
       <sphereGeometry args={[1, segments, Math.max(4, Math.floor(segments / 2))]} />
-      <meshBasicMaterial color="#d9ecff" transparent opacity={PLANET_MARKER_BASE_OPACITY * (subdued ? 0.45 : 1)} depthWrite={false} />
+      <meshBasicMaterial color={color} transparent opacity={PLANET_MARKER_BASE_OPACITY * (subdued ? 0.45 : 1)} depthWrite={false} />
     </mesh>
   );
 }
@@ -850,7 +852,7 @@ function CelestialPreviewArc({ from, to, leaving }: { from: [number, number, num
       <bufferGeometry>
         <bufferAttribute attach="attributes-position" args={[new Float32Array(points.flatMap((point) => point.toArray())), 3]} />
       </bufferGeometry>
-      <lineBasicMaterial ref={material} color="#d5a462" transparent opacity={0.74} depthWrite={false} />
+      <lineBasicMaterial ref={material} color={SCENE_PALETTE.route.arc} transparent opacity={0.74} depthWrite={false} />
     </line>
   );
 }
@@ -873,7 +875,7 @@ function GatePreviewConnection({ gate, destination, leaving }: { gate: DisplayGa
       <bufferGeometry ref={geometry}>
         <bufferAttribute attach="attributes-position" args={[positions.current, 3]} />
       </bufferGeometry>
-      <lineBasicMaterial ref={material} color="#ffe0a1" transparent opacity={0.92} depthTest={false} depthWrite={false} />
+      <lineBasicMaterial ref={material} color={SCENE_PALETTE.route.connection} transparent opacity={0.92} depthTest={false} depthWrite={false} />
     </line>
   );
 }

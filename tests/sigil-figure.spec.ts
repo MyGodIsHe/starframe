@@ -51,6 +51,15 @@ test("turns to the other generated figures the library ships", async ({ page }) 
   await page.getByRole("link", { name: "Atom" }).click();
 
   await expect(scene).toHaveAttribute("data-sigil-figure", "atom");
+
+  await page.getByRole("link", { name: "Hammer" }).click();
+
+  await expect(page.getByRole("heading", { name: "Hammer" })).toBeVisible();
+  await expect(scene).toHaveAttribute("data-sigil-figure", "hammer");
+  // A block hafted on a grip: the body covers its own far side from every side, so some of the five
+  // anchors are always out of sight.
+  await expect(scene).toHaveAttribute("data-sigil-anchors-in-sight", /^[1-4]$/);
+  await expect(scene).toHaveAttribute("data-sigil-outline-count", /[1-9]\d*/);
 });
 
 test("turns the figure when the observer walks round it", async ({ page }) => {

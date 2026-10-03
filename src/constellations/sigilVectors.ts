@@ -62,3 +62,18 @@ export function turnOnto(point: SolidPoint, from: SolidPoint, to: SolidPoint): S
   // Rodrigues: the part of the point along the axis stays, and the part across it turns.
   return add(add(scale(point, cosine), scale(cross(turn, point), sine)), scale(turn, dot(turn, point) * (1 - cosine)));
 }
+
+// A Sigil Figure arrives in its own space: centred, upright, with its farthest point on the unit
+// sphere. A generated figure is written at the proportions somebody would draw it at - a hammer's
+// head at its own height, a wedge standing on its point - so the move onto the origin is made here,
+// once, rather than typed pre-offset into every number of every figure.
+export function intoFigureSpace(vertices: readonly SolidPoint[]): SolidPoint[] {
+  const middle = (axis: 0 | 1 | 2): number => {
+    const spread = vertices.map((vertex) => vertex[axis]);
+    return (Math.min(...spread) + Math.max(...spread)) / 2;
+  };
+  const centred = vertices.map((vertex) => subtract(vertex, [middle(0), middle(1), middle(2)]));
+  const reach = Math.max(...centred.map(length));
+
+  return centred.map((vertex) => scale(vertex, 1 / reach));
+}

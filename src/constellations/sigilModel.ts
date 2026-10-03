@@ -1,6 +1,8 @@
 import { buildModelSolid, type GlyphSolid, type SolidPoint } from "./glyphSolid";
 import { buildAtom } from "./sigilAtom";
 import { buildBolt } from "./sigilBolt";
+import { buildCheese } from "./sigilCheese";
+import { buildHammer } from "./sigilHammer";
 import { buildRing } from "./sigilRing";
 
 // A Sigil Figure whose body was sculpted instead of drawn.
@@ -62,10 +64,11 @@ export function readSigilModel(raw: unknown): SigilModel | null {
 
 // The sculpted bodies this build ships with.
 //
-// Three generated ones - a bolt, an atom and a ring - because each is a subject a rule describes
-// exactly rather than approximately: a zigzag forged as a bar, a core with two shells set square to
-// each other, a torus of two radii and two counts. None of them costs anybody's work, and all three
-// go through the same door an imported model does.
+// Five generated ones - a bolt, an atom, a ring, a hammer and a wedge of cheese - because each is a
+// subject a rule describes exactly rather than approximately: a zigzag forged as a bar, a core with
+// two shells set square to each other, a torus of two radii and two counts, a block lofted along the
+// axis it strikes on and hafted on a grip, a circular sector with shallow holes in its sides. None
+// of them costs anybody's work, and all five go through the same door an imported model does.
 //
 // No imported model is committed. One is a reduction of somebody else's sculpture, and whoever made
 // it decides whether it may be redistributed - which is not a question a star map should answer on
@@ -77,7 +80,7 @@ export function readSigilModel(raw: unknown): SigilModel | null {
 //   const IMPORTED: readonly unknown[] = [wolf];
 const IMPORTED: readonly unknown[] = [];
 
-export const SIGIL_MODELS: readonly SigilModel[] = [buildBolt(), buildAtom(), buildRing(), ...IMPORTED].flatMap((raw) => {
+export const SIGIL_MODELS: readonly SigilModel[] = [buildBolt(), buildAtom(), buildRing(), buildHammer(), buildCheese(), ...IMPORTED].flatMap((raw) => {
   const model = readSigilModel(raw);
   return model ? [model] : [];
 });

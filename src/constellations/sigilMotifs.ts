@@ -9,7 +9,7 @@ import { SIGIL_MODELS, type SigilModel } from "./sigilModel";
 //
 // What it draws from is the sculpted library in `sigilModel`, which is the only library there is:
 // a figure in the sky is a model somebody sculpted, the same one `/sigil.html` turns. A fresh clone
-// has one - the generated ring - and every other is imported by hand, a figure at a time.
+// has the generated ones, and every other is imported by hand, a figure at a time.
 type AuthoredMotif = { figure: string; caption: string };
 
 const authored = new Map<number, { figure: SigilModel; caption: string }>();

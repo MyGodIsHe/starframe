@@ -116,7 +116,84 @@ export function drawnEdges(solid: GlyphSolid, observer: SolidPoint): DrawnEdge[]
       lines.push({ kind: seen, from: span[0], to: span[1] });
     }
   }
-  return lines;
+  return joinCollinear(lines);
+}
+
+// Two lines of the drawing that meet end to end and run straight on are one line.
+//
+// A surface is cut into facets to hold it together, so a crease that runs dead straight arrives
+// here as a row of pieces meeting at points where the body does not turn at all: a sector's
+// straight edge crossing every ring of the lattice it was built on, a rail crossing every section
+// of a tube. Handing those over separately ends a stroke and starts another at every joint, and a
+// stroke ends in a cap - so the joints come out as a row of lit points down a line that has
+// nothing at them, and the figure appears to have vertices it does not have. Joining them is the
+// rule that keeps the triangulation out of the drawing, applied to the line instead of the edge.
+//
+// Only where exactly two lines meet, of the same kind, leaving the joint in exactly opposite
+// directions. Three lines meeting is a corner of the figure; two that leave the same way are a
+// line doubling back on itself; and a line the body cut short ends at a point no other line
+// reaches, which is what keeps a cut a cut.
+function joinCollinear(lines: readonly DrawnEdge[]): DrawnEdge[] {
+  const meeting = new Map<string, number[]>();
+  for (const [index, line] of lines.entries()) {
+    for (const point of [line.from, line.to]) meeting.set(endKey(point), [...(meeting.get(endKey(point)) ?? []), index]);
+  }
+
+  // Which line each line runs on into, at each of its own two ends.
+  const onward = lines.map((): [number, number] => [-1, -1]);
+  for (const [joint, pair] of meeting) {
+    if (pair.length !== 2) continue;
+    const [left, right] = pair;
+    if (lines[left].kind !== lines[right].kind || !runsOn(joint, lines[left], lines[right])) continue;
+    onward[left][endKey(lines[left].from) === joint ? 0 : 1] = right;
+    onward[right][endKey(lines[right].from) === joint ? 0 : 1] = left;
+  }
+
+  const walked = lines.map(() => false);
+  const joined: DrawnEdge[] = [];
+  for (const [index, line] of lines.entries()) {
+    const free = onward[index].indexOf(-1);
+    if (walked[index] || free < 0) continue;
+
+    // From this line's own free end to the free end of the last line of the run.
+    let at = index;
+    let entry = free;
+    const from = entry === 0 ? line.from : line.to;
+    for (;;) {
+      walked[at] = true;
+      const to = entry === 0 ? lines[at].to : lines[at].from;
+      const next = onward[at][1 - entry];
+      if (next < 0) {
+        joined.push({ kind: line.kind, from, to });
+        break;
+      }
+      entry = endKey(lines[next].from) === endKey(to) ? 0 : 1;
+      at = next;
+    }
+  }
+  // A run with no free end to start from closes on itself, which a straight line cannot do; it is
+  // left exactly as it was found rather than guessed at.
+  for (const [index, line] of lines.entries()) if (!walked[index]) joined.push(line);
+
+  return joined;
+}
+
+// Whether two lines meeting at a point carry straight on through it. Both are measured leaving the
+// joint, so carrying on is the one case where they point exactly opposite ways.
+function runsOn(joint: string, left: DrawnEdge, right: DrawnEdge): boolean {
+  const away = (line: DrawnEdge): SolidPoint | null => {
+    const [here, there] = endKey(line.from) === joint ? [line.from, line.to] : [line.to, line.from];
+    return unit([there[0] - here[0], there[1] - here[1], there[2] - here[2]]);
+  };
+
+  const [first, second] = [away(left), away(right)];
+  return first !== null && second !== null && dot(first, second) < -1 + 1e-9;
+}
+
+// Two pieces of one crease share the vertex they meet at, so the point itself is the name of the
+// joint. A line the body cut short ends somewhere no vertex stands and joins nothing.
+function endKey(point: SolidPoint): string {
+  return `${point[0]},${point[1]},${point[2]}`;
 }
 
 // Whether an edge is where the body ends, rather than where one part of it passes in front of
