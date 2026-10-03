@@ -1,45 +1,41 @@
 import type { Vector3 } from "../universe/generateUniverse";
-import { buildBody, buildLathe, isClosedStroke, mapSolid, spanAt, type GlyphSolid, type SolidPoint } from "./glyphSolid";
-import { fitFigure, type FigurePoint, type SigilFigure } from "./sigilFigure";
+import { mapSolid, type GlyphSolid, type SolidPoint } from "./glyphSolid";
+import { fitAnchors, placePoint, FIGURE_EXTENT, LEAD_THRESHOLD, type ChartStar, type FitPoint, type Placement } from "./sigilFit";
+import type { SigilModel } from "./sigilModel";
 
 // A Constellation Glyph as a fixed object in space.
 //
 // Fitting a figure in the observer's sky plane meant refitting it every time the observer moved,
 // and the anchor-to-star matching would jump from one frame to the next: the figure visibly redrew
 // itself onto different systems mid-flight. So the fit happens once, in a frame the constellation
-// owns - the best-fit plane through its own Solar Systems - and the result is a fixed set of 3D
-// points. Travel then changes only the projection, which is what gives a glyph its volume: it is
-// one object seen from somewhere else, not a new drawing.
+// owns - the best-fit plane through its own Solar Systems - and the result is a fixed body in
+// space. Travel then changes only the projection, which is what gives a glyph its volume: it is one
+// object seen from somewhere else, not a new drawing.
 //
-// The fit itself stays flat, in the plane the constellation most nearly lies in, because that is
-// where the real Solar Systems are and where the anchors must land. Volume is given afterwards: a
-// closed outline becomes a body standing through that plane, with the stars at its waist, and the
-// figure's open lines are struck on the body's near and far faces. Only then can a glyph hide its
-// own far side, which is what tells a pilot they are looking at a thing and not at a sprite.
+// What gets placed is a sculpted body, and it arrives with its volume already. Nothing here gives
+// it depth, thickens it or turns it about an axis - the model is the artwork, and the fit decides
+// only where in the constellation it stands, how big it is and which way up. That is the whole
+// difference from the line art this replaced: a drawing had to be made into a body by rule, and
+// every such rule was a guess about a shape nobody drew.
+//
+// The model's own x and y lie in the constellation's plane and its z stands through it, so a figure
+// faces the way its constellation does and keeps the galactic sense of up.
 
-export type GlyphShapeStroke = {
-  kind: "figure" | "lead";
-  /**
-   * Which face of the body this line is struck on: `1` the near cap, `-1` the far cap, `0` the
-   * waist, where the real Solar Systems and their Glyph Leads are. A line on a cap is drawn only
-   * while that cap faces the observer.
-   */
-  side: 1 | 0 | -1;
-  /** Absolute SDE positions, in metres. */
-  points: readonly Vector3[];
-};
+/** A tie from a real Solar System to the drawing, in absolute SDE positions. */
+export type GlyphLead = { from: Vector3; to: Vector3 };
 
 export type GlyphShape = {
   /**
-   * The bodies the figure's closed outlines stand for, in absolute space. Their edges are most of
-   * the drawing; which of those edges an observer can see is decided per observer, per frame, and
-   * never changes a vertex.
+   * The bodies the figure is made of, in absolute space. Their edges are the whole drawing; which
+   * of those edges an observer can see is decided per observer, per frame, and never moves a
+   * vertex.
    */
   solids: readonly GlyphSolid[];
-  strokes: readonly GlyphShapeStroke[];
+  /** Ties for the Solar Systems no part of the figure reached. */
+  leads: readonly GlyphLead[];
   /** Centre of the constellation's own frame, in absolute SDE positions. */
   centre: Vector3;
-  /** Normal of the plane the figure was laid out on: the direction its near cap faces. */
+  /** Normal of the plane the figure was placed in: the direction it faces. */
   normal: Vector3;
   /** The figure's own upright within that plane, from the galactic vertical. */
   up: Vector3;
@@ -53,30 +49,11 @@ type ShapeSystem = {
 };
 
 // EVE's vertical axis, used to give every constellation's frame the same sense of up so a figure is
-// authored upright and stays that way in space.
+// sculpted upright and stays that way in space.
 const GALACTIC_UP: Vector3 = [0, 1, 0];
 const DEGENERATE = 1e-9;
 
-// Half the body's thickness, as a fraction of the figure's own size rather than of the
-// constellation's radius: a body has to be thick in proportion to the thing it is a body of, or a
-// long thin figure comes out a sliver however large the constellation around it.
-//
-// The depth is authored, not measured, and that is a deliberate change: real constellations are
-// flatter than they look - the out-of-plane spread of their Solar Systems is a median 0.126 of
-// their radius across the whole SDE build - so taking the thickness from the data gives every
-// figure a slab too thin to read as a body from any angle. The proportion is therefore the
-// artwork's, and the data sets only where inside a narrow band each constellation falls: a
-// genuinely flat one still gets the shallower body, a deep one the fuller.
-const BASE_DEPTH = 0.45;
-const DEPTH_BAND = 0.18;
-const MEDIAN_SPREAD = 0.126;
-
-// What a figure that declares no side view gets instead: a body fullest at mid-height and drawn in
-// towards the extremes. It is not a side view and does not pretend to be one - it only keeps the
-// figure from being a slab with a rectangle for a profile until the side view is authored.
-const DEFAULT_WAIST = 0.3;
-
-export function buildGlyphShape(input: readonly ShapeSystem[], figure: SigilFigure): GlyphShape | null {
+export function buildGlyphShape(input: readonly ShapeSystem[], model: SigilModel): GlyphShape | null {
   if (input.length < 2) return null;
 
   // Anchor-to-star matching resolves ties by position in the list, so the shape is only stable if
@@ -88,127 +65,107 @@ export function buildGlyphShape(input: readonly ShapeSystem[], figure: SigilFigu
   const frame = planeFrame(offsets);
   if (!frame) return null;
 
-  // Solar Systems in the constellation's own plane, plus how far each sits off it.
-  const planar = offsets.map((offset) => ({
-    x: dot(offset, frame.right),
-    y: dot(offset, frame.up),
-    z: dot(offset, frame.normal),
-  }));
+  // Solar Systems in the constellation's own plane. How far each sits off it is not asked any more:
+  // the body brought its own depth, and nothing here is free to change it.
+  const planar = offsets.map((offset) => ({ x: dot(offset, frame.right), y: dot(offset, frame.up) }));
 
   let radius = 0;
   for (const point of planar) radius = Math.max(radius, Math.hypot(point.x, point.y));
   if (radius <= DEGENERATE) return null;
 
-  const chartPoints = systems.map((system, index) => ({
+  const stars: ChartStar[] = systems.map((system, index) => ({
     systemId: system.id,
     x: planar[index].x / radius,
     y: planar[index].y / radius,
   }));
-  const fitted = fitFigure(figure, chartPoints);
-  if (fitted.strokes.length === 0) return null;
+  const fit = fitAnchors(model.anchors.map((anchor): FitPoint => [anchor.position[0], anchor.position[1]]), stars);
+  if (!fit) return null;
 
-  const depthFraction = bodyDepth(planar.map((point) => point.z / radius));
-  // The figure's own size, for the lines struck on its caps: they belong to no one outline.
-  const figureDepth = depthFraction * extentOf(fitted.strokes.flatMap((stroke) => stroke.points));
+  // Glyph Occlusion reserves a fixed reach around a glyph's footprint, so a figure the fit placed
+  // wider than that is brought back inside it whole rather than cropped.
+  let reach = 0;
+  for (const vertex of model.solid.vertices) {
+    const placed = place(vertex, fit.placement, 1);
+    reach = Math.max(reach, Math.hypot(placed[0], placed[1]));
+  }
+  const containment = reach > FIGURE_EXTENT ? FIGURE_EXTENT / reach : 1;
+
+  const toChart = (point: SolidPoint): SolidPoint => place(point, fit.placement, containment);
   const toAbsolute = (point: SolidPoint): SolidPoint => [
     centroid[0] + (frame.right[0] * point[0] + frame.up[0] * point[1] + frame.normal[0] * point[2]) * radius,
     centroid[1] + (frame.right[1] * point[0] + frame.up[1] * point[1] + frame.normal[1] * point[2]) * radius,
     centroid[2] + (frame.right[2] * point[0] + frame.up[2] * point[1] + frame.normal[2] * point[2]) * radius,
   ];
-  const toDirection = (direction: SolidPoint): SolidPoint => [
-    frame.right[0] * direction[0] + frame.up[0] * direction[1] + frame.normal[0] * direction[2],
-    frame.right[1] * direction[0] + frame.up[1] * direction[1] + frame.normal[1] * direction[2],
-    frame.right[2] * direction[0] + frame.up[2] * direction[1] + frame.normal[2] * direction[2],
-  ];
+  // Turning the figure in its own plane turns its face normals with it; the scale is uniform, so it
+  // leaves a direction alone.
+  const toDirection = (direction: SolidPoint): SolidPoint => {
+    const turned = turn([direction[0], direction[1]], fit.placement.rotation);
+    return [
+      frame.right[0] * turned[0] + frame.up[0] * turned[1] + frame.normal[0] * direction[2],
+      frame.right[1] * turned[0] + frame.up[1] * turned[1] + frame.normal[1] * direction[2],
+      frame.right[2] * turned[0] + frame.up[2] * turned[1] + frame.normal[2] * direction[2],
+    ];
+  };
 
-  const solids: GlyphSolid[] = [];
-  const strokes: GlyphShapeStroke[] = [];
-
-  for (const stroke of fitted.strokes) {
-    // A Glyph Lead ties a real Solar System to the artwork, and the systems are at the waist, so a
-    // lead stays there too rather than being struck on a cap it has nothing to do with.
-    if (stroke.kind === "lead") {
-      strokes.push({ kind: "lead", side: 0, points: stroke.points.map((point) => toAbsolute([point[0], point[1], 0]) as Vector3) });
-      continue;
-    }
-
-    const solid = isClosedStroke(stroke.points) ? buildSolid(figure, stroke.points, stroke.source, depthFraction) : null;
-    if (solid) {
-      solids.push(mapSolid(solid, toAbsolute, toDirection));
-      continue;
-    }
-
-    // An open line carries no body of its own, so it is struck on both caps: the near copy reads as
-    // detail on the side facing the pilot, and the far one is hidden behind the body with the rest
-    // of the far side.
-    for (const side of [1, -1] as const) {
-      strokes.push({ kind: "figure", side, points: stroke.points.map((point) => toAbsolute([point[0], point[1], side * figureDepth]) as Vector3) });
-    }
-  }
-
-  if (solids.length === 0 && strokes.every((stroke) => stroke.kind === "lead")) return null;
-  return { solids, strokes, centre: centroid, normal: frame.normal, up: frame.up, radius };
-}
-
-// The body one closed outline stands for. A figure that can be turned is turned, which costs no
-// authored art at all; otherwise the outline keeps its shape and only its thickness varies, from
-// the authored side view where there is one.
-function buildSolid(figure: SigilFigure, outline: readonly FigurePoint[], source: number | undefined, depthFraction: number): GlyphSolid | null {
-  // A turned body is as deep as it is wide by construction - that is what being turned means - so
-  // the constellation's own flatness only squashes or fills it within the band, and must never be
-  // multiplied by the figure's size a second time.
-  if (figure.symmetry === "revolve") return buildLathe(outline, depthFraction / BASE_DEPTH);
-
-  const profile = source === undefined ? null : figure.side ?? null;
-  return buildBody(outline, halfDepths(outline, profile, depthFraction * extentOf(outline)));
-}
-
-// Thickness along the outline, as a share of the body's depth. Height is measured as a fraction of
-// the outline's own extent rather than in figure space, so the profile survives the fit's scaling
-// and its slight tilt without having to be transformed alongside it.
-function halfDepths(outline: readonly FigurePoint[], profile: readonly FigurePoint[] | null, depth: number): number[] {
-  const heights = outline.map(([, y]) => y);
-  const low = Math.min(...heights);
-  const high = Math.max(...heights);
-  if (high - low <= DEGENERATE) return outline.map(() => depth);
-
-  const sideLow = profile ? Math.min(...profile.map(([, y]) => y)) : 0;
-  const sideHigh = profile ? Math.max(...profile.map(([, y]) => y)) : 0;
-  let widest = 0;
-  if (profile) {
-    for (let step = 0; step <= 32; step += 1) {
-      const span = spanAt(profile, sideLow + ((sideHigh - sideLow) * step) / 32);
-      if (span) widest = Math.max(widest, (span[1] - span[0]) / 2);
-    }
-  }
-
-  return heights.map((y) => {
-    const height = (y - low) / (high - low);
-    if (!profile || widest <= DEGENERATE) return depth * (DEFAULT_WAIST + (1 - DEFAULT_WAIST) * Math.sqrt(Math.max(0, 1 - (2 * height - 1) ** 2)));
-    const span = spanAt(profile, sideLow + (sideHigh - sideLow) * height);
-    const half = span ? (span[1] - span[0]) / 2 : 0;
-    return Math.max(depth * 0.08, (depth * half) / widest);
+  const chartVertices = model.solid.vertices.map(toChart);
+  const leads = stars.flatMap((star): GlyphLead[] => {
+    const nearest = nearestOnBody([star.x, star.y], model.solid, chartVertices);
+    if (!nearest || Math.hypot(nearest[0] - star.x, nearest[1] - star.y) <= LEAD_THRESHOLD) return [];
+    // The Solar Systems lie in the constellation's plane, so a tie stays in it rather than climbing
+    // the body to wherever its surface happens to be.
+    return [{ from: toAbsolute([star.x, star.y, 0]) as Vector3, to: toAbsolute([nearest[0], nearest[1], 0]) as Vector3 }];
   });
+
+  return {
+    solids: [mapSolid(model.solid, (point) => toAbsolute(toChart(point)), toDirection)],
+    leads,
+    centre: centroid,
+    normal: frame.normal,
+    up: frame.up,
+    radius,
+  };
 }
 
-// How big a run of points is, as the geometric mean of its half-extents: a measure that shrinks
-// with a small figure and does not let one long axis stand in for the whole of it.
-function extentOf(points: readonly FigurePoint[]): number {
-  if (points.length === 0) return 0;
-  const xs = points.map(([x]) => x);
-  const ys = points.map(([, y]) => y);
-  const width = (Math.max(...xs) - Math.min(...xs)) / 2;
-  const height = (Math.max(...ys) - Math.min(...ys)) / 2;
-  return Math.sqrt(Math.max(width, DEGENERATE) * Math.max(height, DEGENERATE));
+// The model in chart space: turned and scaled onto the stars, then brought inside the reserved
+// reach. Both are similarities, so the body stays the body it was sculpted as.
+function place(point: SolidPoint, placement: Placement, containment: number): SolidPoint {
+  const flat = placePoint([point[0], point[1]], placement);
+  return [flat[0] * containment, flat[1] * containment, point[2] * placement.scale * containment];
 }
 
-// Where in the allowed band this constellation's body falls, from how far its own Solar Systems sit
-// off the plane they were fitted in.
-function bodyDepth(offsets: readonly number[]): number {
-  let total = 0;
-  for (const offset of offsets) total += (offset * offset) / offsets.length;
-  const spread = Math.sqrt(total);
-  return Math.max(BASE_DEPTH - DEPTH_BAND, Math.min(BASE_DEPTH + DEPTH_BAND, (BASE_DEPTH * spread) / MEDIAN_SPREAD));
+function turn(point: FitPoint, rotation: number): FitPoint {
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  return [cos * point[0] - sin * point[1], sin * point[0] + cos * point[1]];
+}
+
+// Where a star's lead should land: the nearest point of the body seen flat on the chart. Every edge
+// is a candidate, structural ones included - a lead ties to the shape a pilot sees, and which edges
+// are drawn is not known until there is an observer.
+function nearestOnBody(star: FitPoint, solid: GlyphSolid, chartVertices: readonly SolidPoint[]): FitPoint | null {
+  let best: FitPoint | null = null;
+  let bestDistance = Infinity;
+
+  for (const edge of solid.edges) {
+    const from = chartVertices[edge.from];
+    const to = chartVertices[edge.to];
+    const candidate = closestOnSegment(star, [from[0], from[1]], [to[0], to[1]]);
+    const distance = (candidate[0] - star[0]) ** 2 + (candidate[1] - star[1]) ** 2;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+function closestOnSegment(point: FitPoint, from: FitPoint, to: FitPoint): FitPoint {
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= 1e-12) return from;
+  const amount = Math.max(0, Math.min(1, ((point[0] - from[0]) * dx + (point[1] - from[1]) * dy) / lengthSquared));
+  return [from[0] + dx * amount, from[1] + dy * amount];
 }
 
 type PlaneFrame = { right: Vector3; up: Vector3; normal: Vector3 };

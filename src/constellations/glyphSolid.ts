@@ -1,28 +1,25 @@
 // The body a Constellation Glyph hides behind.
 //
-// Hidden-line removal needs a surface: a cage of lines has nothing to occlude with. So every closed
-// stroke of a fitted Sigil Figure stands for a real solid, and the lines actually drawn are that
-// solid's own edges. What a pilot sees is then a figure with a far side, not a sprite unrolled onto
-// the sky.
+// Hidden-line removal needs a surface: a cage of lines has nothing to occlude with. So a Sigil
+// Figure is a real solid, and the lines actually drawn are that solid's own edges. What a pilot
+// sees is then a figure with a far side, not a sprite unrolled onto the sky.
 //
-// A body is built one of two ways, because a straight extrusion is a box seen edge on and half the
-// library is not box-shaped. A `revolve` body is turned about the figure's upright, from the
-// outline's own half-width, which is right for anything a potter could throw - a chalice, a tower,
-// a beacon. A `bilateral` body keeps the front outline exactly and varies its thickness with height
-// from an authored side view, so the front silhouette is the artwork and the side silhouette is the
-// side view. Either way both silhouettes are real, and neither repeats the other.
+// Every body arrives sculpted. Building one out of flat line art was tried first - extrude the
+// outline, turn it about its upright, vary its thickness along an authored side view - and every
+// one of those rules is a guess about a shape nobody drew; a wolf came out a slab with a wolf
+// printed on it. A model has the volume already, so all this has to do is take a closed surface
+// and be told which of its edges are the drawing.
 //
-// Everything is triangulated, so every face normal is exact and the facing test cannot be fooled by
-// a warped quad. Triangulation leaves edges behind that hold the surface together but were never
-// part of the drawing, so an edge carries whether it is drawn: a structural edge still occludes and
-// still decides its neighbours' visibility, and is never emitted.
+// Everything is triangles, so every face normal is exact and the facing test cannot be fooled by a
+// warped quad. A surface cut into triangles has edges that hold it together but were never part of
+// the drawing, so an edge carries whether it is drawn: a structural edge still occludes and still
+// decides its neighbours' visibility, and is never emitted on its own.
 //
 // Nothing here knows about the observer's camera. Visibility is decided from the observer's Solar
 // System, in absolute space, which is the whole point: orbiting the camera cannot change which
 // edges are hidden, and travelling between stars can. A glyph's vertices never move.
 
 export type SolidPoint = readonly [number, number, number];
-type PlanePoint = readonly [number, number];
 
 export type SolidFace = {
   /** Indices into the solid's vertices, wound counter-clockwise seen from outside. */
@@ -57,145 +54,276 @@ export type EdgeVisibility = "silhouette" | "interior" | "hidden";
 
 const DEGENERATE = 1e-12;
 
-// How finely a turned body is sampled, and how much of that sampling is drawn. The surface is cut
-// fine so the facing test and the outline are accurate, and only a few of its meridians and rings
-// are part of the drawing: a sigil is a handful of confident lines, and a full mesh reads as a
-// wireframe model rather than as an emblem.
-const LATHE_MERIDIANS = 12;
-const LATHE_SECTIONS = 7;
-const DRAWN_MERIDIAN_STEP = 3;
-const DRAWN_RINGS = [0, 3, 6];
-
-// Builds a body that keeps the outline exactly and varies its thickness along it, one half-depth
-// per outline point. The front silhouette is therefore the authored artwork, unchanged, and the
-// side silhouette is whatever the half-depths trace out.
-export function buildBody(outline: readonly PlanePoint[], halfDepths: readonly number[]): GlyphSolid | null {
-  const profile = closedProfile(outline);
-  if (profile.length < 3) return null;
-
-  // A counter-clockwise profile is what makes every outward normal point away from the body, and an
-  // authored stroke may be wound either way.
-  const forward = signedArea(profile) >= 0;
-  const wound = forward ? profile : [...profile].reverse();
-  const depths = alignDepths(outline, profile, halfDepths, forward);
-  if (Math.abs(signedArea(wound)) <= DEGENERATE || depths.some((depth) => !(depth > 0))) return null;
-
-  const count = wound.length;
-  const vertices: SolidPoint[] = [
-    ...wound.map(([x, y], index): SolidPoint => [x, y, -depths[index]]),
-    ...wound.map(([x, y], index): SolidPoint => [x, y, depths[index]]),
-  ];
-
-  const cap = triangulate(wound);
-  if (cap.length === 0) return null;
-
-  const triangles: [number, number, number][] = [
-    ...cap.map(([a, b, c]): [number, number, number] => [c, b, a]),
-    ...cap.map(([a, b, c]): [number, number, number] => [count + a, count + b, count + c]),
-  ];
-  const drawn = new Set<string>();
-
-  for (let index = 0; index < count; index += 1) {
-    const next = (index + 1) % count;
-    triangles.push([index, next, count + next], [index, count + next, count + index]);
-    // The outline, front and back, and the edges joining them: the drawing is these, and the
-    // triangulation that fills the caps and splits the walls is not.
-    drawn.add(edgeKey(index, next));
-    drawn.add(edgeKey(count + index, count + next));
-    drawn.add(edgeKey(index, count + index));
-  }
-
-  return solidFromTriangles(vertices, triangles, drawn);
+// The body of a Sigil Figure, from a model somebody sculpted. The marked edges are the creases
+// sharp enough to be part of the drawing; the outline is never marked, because where a body ends is
+// a question only an observer can answer.
+export function buildModelSolid(vertices: readonly SolidPoint[], triangles: readonly (readonly [number, number, number])[], drawnEdges: readonly (readonly [number, number])[]): GlyphSolid | null {
+  return solidFromTriangles(vertices, triangles.map((triangle) => [...triangle] as [number, number, number]), new Set(drawnEdges.map(([from, to]) => edgeKey(from, to))));
 }
 
-// Builds a body turned about the figure's upright. The outline supplies the profile - its own
-// half-width at each height - so a chalice drawn face on becomes a chalice from every side, and
-// nothing about the figure has to be authored twice.
-export function buildLathe(outline: readonly PlanePoint[], depthScale = 1): GlyphSolid | null {
-  const profile = closedProfile(outline);
-  if (profile.length < 3 || !(depthScale > 0)) return null;
+/** One line of the drawing, as one observer sees it: a whole edge, or the part of one left visible. */
+export type DrawnEdge = {
+  kind: "silhouette" | "interior";
+  from: SolidPoint;
+  to: SolidPoint;
+};
 
-  // The axis is the outline's own long direction, not the frame's vertical: a chalice that the fit
-  // left leaning has to be turned about its own stem, or it comes out a bent tube that reads as a
-  // leaf from the side. An outline with no clear long direction - a squat one - keeps the upright.
-  const axis = principalAxis(profile);
-  const across: PlanePoint = [-axis[1], axis[0]];
-  const origin = centroidOf(profile);
-  const along = profile.map((point): PlanePoint => [
-    (point[0] - origin[0]) * across[0] + (point[1] - origin[1]) * across[1],
-    (point[0] - origin[0]) * axis[0] + (point[1] - origin[1]) * axis[1],
-  ]);
+// How far a sample is lifted off the surface before asking whether the body is in the way, as a
+// fraction of the body's own reach. Every point tested lies exactly on the surface, so without the
+// lift the body occludes itself everywhere.
+const SURFACE_LIFT = 0.004;
 
-  const heights = along.map(([, height]) => height);
-  const low = Math.min(...heights);
-  const high = Math.max(...heights);
-  if (high - low <= DEGENERATE) return null;
+// How far to one side of an edge to look for open sky before calling it the outline, as a fraction
+// of the body's own reach. Wide enough to clear the jaggedness of one facet, narrow enough to stay
+// inside a limb.
+const OUTLINE_PROBE = 0.02;
 
-  // The sections are pulled in from the extreme heights, where the outline's half-width collapses
-  // to nothing and a ring would be a point.
-  const sections: { height: number; centre: number; radius: number }[] = [];
-  for (let step = 0; step < LATHE_SECTIONS; step += 1) {
-    const height = low + ((high - low) * (step + 0.5)) / LATHE_SECTIONS;
-    const span = spanAt(along, height);
-    if (!span) return null;
-    sections.push({ height, centre: (span[0] + span[1]) / 2, radius: Math.max((span[1] - span[0]) / 2, DEGENERATE) });
-  }
+// The lines a body leaves an observer, which is the whole drawing.
+//
+// The facing test alone would answer this only for a body that is convex. It says an edge is hidden
+// when both the faces it borders are turned away, which is exact only while nothing of a body
+// stands in front of anything else of it.
+//
+// A sculpted body is not convex anywhere. A wolf's far foreleg faces the observer squarely and is
+// squarely behind its chest, and the facing test passes it: the figure came out drawn on glass,
+// with its far side showing straight through its near side. So a sculpted body is asked the real
+// question - is any part of me between this line and the observer - and its edges come back cut
+// into the pieces that survive.
+//
+// The cut points are not searched for. An edge's visibility can only change where it passes behind
+// the body's outline, so the outline supplies the candidates and each stretch between them needs a
+// single test. That keeps this exact rather than sampled: a line never flickers along its length,
+// and it breaks precisely where the silhouette crosses it.
+//
+// None of it is the camera's business. Every test is against the observer's own position, so this
+// stays a property of where a pilot is standing, as Glyph Parallax requires: orbiting the camera
+// cannot restore a line the body is covering, and travelling to another Solar System can.
+export function drawnEdges(solid: GlyphSolid, observer: SolidPoint): DrawnEdge[] {
+  const frontFacing = solid.faces.map((face) => isFrontFacing(face, observer));
+  const lines: DrawnEdge[] = [];
 
-  const vertices: SolidPoint[] = [];
-  for (const section of sections) {
-    for (let meridian = 0; meridian < LATHE_MERIDIANS; meridian += 1) {
-      const angle = (2 * Math.PI * meridian) / LATHE_MERIDIANS;
-      const offset = section.centre + section.radius * Math.cos(angle);
-      vertices.push([
-        origin[0] + axis[0] * section.height + across[0] * offset,
-        origin[1] + axis[1] * section.height + across[1] * offset,
-        section.radius * Math.sin(angle) * depthScale,
-      ]);
+  const outline = solid.edges.filter((edge) => edgeVisibility(frontFacing, edge) === "silhouette");
+  const reach = reachOf(solid);
+  const lift = SURFACE_LIFT * reach;
+
+  for (const edge of solid.edges) {
+    const seen = edgeVisibility(frontFacing, edge);
+    if (seen === "hidden") continue;
+    // A marked crease is a line of the figure and is drawn wherever it can be seen. An unmarked edge
+    // is only ever here because the body turns away along it, and then only on the outline.
+    if (!edge.drawn && !(seen === "silhouette" && isOnOutline(solid, frontFacing, edge, observer, OUTLINE_PROBE * reach))) continue;
+    for (const span of visibleSpans(solid, edge, outline, frontFacing, observer, lift)) {
+      lines.push({ kind: seen, from: span[0], to: span[1] });
     }
   }
-
-  const triangles: [number, number, number][] = [];
-  const drawn = new Set<string>();
-  const at = (section: number, meridian: number) => section * LATHE_MERIDIANS + (meridian % LATHE_MERIDIANS);
-
-  for (let section = 0; section + 1 < sections.length; section += 1) {
-    for (let meridian = 0; meridian < LATHE_MERIDIANS; meridian += 1) {
-      const a = at(section, meridian);
-      const b = at(section, meridian + 1);
-      const c = at(section + 1, meridian + 1);
-      const d = at(section + 1, meridian);
-      triangles.push([a, b, c], [a, c, d]);
-      if (meridian % DRAWN_MERIDIAN_STEP === 0) drawn.add(edgeKey(a, d));
-    }
-  }
-  for (const section of DRAWN_RINGS) {
-    if (section >= sections.length) continue;
-    for (let meridian = 0; meridian < LATHE_MERIDIANS; meridian += 1) drawn.add(edgeKey(at(section, meridian), at(section, meridian + 1)));
-  }
-
-  // Discs closing the two ends, so a ray down the axis meets the body instead of passing through.
-  for (const [section, outward] of [[0, false], [sections.length - 1, true]] as const) {
-    const hub = vertices.length;
-    vertices.push([
-      origin[0] + axis[0] * sections[section].height + across[0] * sections[section].centre,
-      origin[1] + axis[1] * sections[section].height + across[1] * sections[section].centre,
-      0,
-    ]);
-    for (let meridian = 0; meridian < LATHE_MERIDIANS; meridian += 1) {
-      const a = at(section, meridian);
-      const b = at(section, meridian + 1);
-      triangles.push(outward ? [hub, a, b] : [hub, b, a]);
-    }
-  }
-
-  return solidFromTriangles(vertices, triangles, drawn);
+  return lines;
 }
 
-// A straight extrusion: the body every figure had before a side view existed, and still the right
-// one for a figure that declares no symmetry of its own.
-export function buildPrism(outline: readonly PlanePoint[], depth: number): GlyphSolid | null {
-  if (!(depth > 0)) return null;
-  return buildBody(outline, outline.map(() => depth));
+// Whether an edge is where the body ends, rather than where one part of it passes in front of
+// another.
+//
+// Both are places the surface turns away, and the facing test cannot tell them apart - but they
+// behave completely differently as a pilot moves. The outline is a closed curve that slides over the
+// body: edges join it and leave it, and the curve itself never breaks, so it reads as one line
+// moving. A turn-away in the middle of a near-flat flank is not a curve at all. It is one facet
+// edge that qualifies for a fraction of a degree, and what a pilot sees is a stroke blinking on in
+// the middle of the chest and off again, which is the one thing a sigil must never do.
+//
+// So the question asked is not how the surface is folded but what is behind it: step a little to one
+// side of the edge across the sky, and if there is no body there, the edge is where the body ends.
+// Interior detail is left to the creases the figure was marked with, which are drawn whenever they
+// can be seen and therefore never blink.
+function isOnOutline(solid: GlyphSolid, frontFacing: readonly boolean[], edge: SolidEdge, observer: SolidPoint, probe: number): boolean {
+  const from = solid.vertices[edge.from];
+  const to = solid.vertices[edge.to];
+  const middle = pointAt(from, to, 0.5);
+
+  const view = unit([middle[0] - observer[0], middle[1] - observer[1], middle[2] - observer[2]]);
+  const along = unit([to[0] - from[0], to[1] - from[1], to[2] - from[2]]);
+  if (!view || !along) return false;
+
+  // Across the edge and across the line of sight: the two ways off the edge within the sky.
+  const across = unit(crossProduct(view, along));
+  if (!across) return false;
+
+  for (const side of [1, -1]) {
+    const point: SolidPoint = [middle[0] + across[0] * probe * side, middle[1] + across[1] * probe * side, middle[2] + across[2] * probe * side];
+    if (!meetsSolid(solid, frontFacing, observer, point)) return true;
+  }
+  return false;
+}
+
+// Whether the ray from the observer through a point meets the body anywhere along it. Only the faces
+// turned towards the observer are asked: a ray that reaches the body at all enters through one.
+function meetsSolid(solid: GlyphSolid, frontFacing: readonly boolean[], observer: SolidPoint, through: SolidPoint): boolean {
+  const direction: SolidPoint = [through[0] - observer[0], through[1] - observer[1], through[2] - observer[2]];
+
+  for (let index = 0; index < solid.faces.length; index += 1) {
+    if (!frontFacing[index]) continue;
+    if (hitsTriangle(solid, solid.faces[index], observer, direction, Infinity)) return true;
+  }
+  return false;
+}
+
+/** Whether the body leaves one of its own vertices in sight, for the points marked on a figure. */
+export function isVertexVisible(solid: GlyphSolid, vertex: number, observer: SolidPoint): boolean {
+  const frontFacing = solid.faces.map((face) => isFrontFacing(face, observer));
+  const normal = vertexNormal(solid, vertex);
+  if (!normal) return false;
+
+  const lift = SURFACE_LIFT * reachOf(solid);
+  const point = solid.vertices[vertex];
+  return !isBlocked(solid, frontFacing, [point[0] + normal[0] * lift, point[1] + normal[1] * lift, point[2] + normal[2] * lift], observer);
+}
+
+// The stretches of one edge the body does not cover, found by cutting it where the outline crosses
+// in front of it and keeping whichever stretches survive a single test each.
+function visibleSpans(solid: GlyphSolid, edge: SolidEdge, outline: readonly SolidEdge[], frontFacing: readonly boolean[], observer: SolidPoint, lift: number): [SolidPoint, SolidPoint][] {
+  const from = solid.vertices[edge.from];
+  const to = solid.vertices[edge.to];
+  const normal = edgeNormal(solid, edge);
+  const cuts = [0, 1];
+
+  for (const other of outline) {
+    // An outline edge meeting this one at a shared corner crosses it there by definition and says
+    // nothing about what covers what.
+    if (other === edge || other.from === edge.from || other.from === edge.to || other.to === edge.from || other.to === edge.to) continue;
+    const cut = crossingParameter(from, to, solid.vertices[other.from], solid.vertices[other.to], observer);
+    if (cut !== null) cuts.push(cut);
+  }
+  cuts.sort((left, right) => left - right);
+
+  const spans: [SolidPoint, SolidPoint][] = [];
+  let open: number | null = null;
+
+  for (let step = 0; step + 1 < cuts.length; step += 1) {
+    if (cuts[step + 1] - cuts[step] <= 1e-9) continue;
+    const middle = (cuts[step] + cuts[step + 1]) / 2;
+    const sample = pointAt(from, to, middle);
+    const visible = !isBlocked(solid, frontFacing, [sample[0] + normal[0] * lift, sample[1] + normal[1] * lift, sample[2] + normal[2] * lift], observer);
+
+    if (visible && open === null) open = cuts[step];
+    if (!visible && open !== null) {
+      spans.push([pointAt(from, to, open), pointAt(from, to, cuts[step])]);
+      open = null;
+    }
+  }
+  if (open !== null) spans.push([pointAt(from, to, open), to]);
+  return spans;
+}
+
+// Whether any of the body stands between a point just outside its surface and the observer.
+//
+// Only the faces turned towards the observer are asked. A segment that leaves the body does so
+// through a face the observer can see, so if the body is in the way at all one of those faces is
+// hit. And a face the point is already outside of cannot be hit by a segment whose other end is
+// outside it too, which disposes of nearly all of them before any arithmetic.
+function isBlocked(solid: GlyphSolid, frontFacing: readonly boolean[], point: SolidPoint, observer: SolidPoint): boolean {
+  const direction: SolidPoint = [observer[0] - point[0], observer[1] - point[1], observer[2] - point[2]];
+
+  for (let index = 0; index < solid.faces.length; index += 1) {
+    if (!frontFacing[index]) continue;
+    const face = solid.faces[index];
+    if (face.normal[0] * (point[0] - face.centre[0]) + face.normal[1] * (point[1] - face.centre[1]) + face.normal[2] * (point[2] - face.centre[2]) > 0) continue;
+    if (hitsTriangle(solid, face, point, direction)) return true;
+  }
+  return false;
+}
+
+// Moller-Trumbore, restricted to the segment: a hit beyond the observer is not in the way, and a hit
+// at the sample itself is the surface the sample was lifted off.
+function hitsTriangle(solid: GlyphSolid, face: SolidFace, origin: SolidPoint, direction: SolidPoint, limit = 1): boolean {
+  const [a, b, c] = face.vertices.map((index) => solid.vertices[index]);
+  const edge1: SolidPoint = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const edge2: SolidPoint = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  const pivot = crossProduct(direction, edge2);
+  const determinant = dot(edge1, pivot);
+  if (Math.abs(determinant) <= DEGENERATE) return false;
+
+  const inverse = 1 / determinant;
+  const offset: SolidPoint = [origin[0] - a[0], origin[1] - a[1], origin[2] - a[2]];
+  const u = dot(offset, pivot) * inverse;
+  if (u < 0 || u > 1) return false;
+
+  const across = crossProduct(offset, edge1);
+  const v = dot(direction, across) * inverse;
+  if (v < 0 || u + v > 1) return false;
+
+  const depth = dot(edge2, across) * inverse;
+  return depth > 1e-6 && depth < limit;
+}
+
+// Where the ray from the observer through this edge passes through another edge: the parameter along
+// the first at which the two cross as the observer sees them, or null if they never do.
+function crossingParameter(from: SolidPoint, to: SolidPoint, otherFrom: SolidPoint, otherTo: SolidPoint, observer: SolidPoint): number | null {
+  const left: SolidPoint = [otherFrom[0] - observer[0], otherFrom[1] - observer[1], otherFrom[2] - observer[2]];
+  const right: SolidPoint = [otherTo[0] - observer[0], otherTo[1] - observer[1], otherTo[2] - observer[2]];
+  const normal = crossProduct(left, right);
+
+  // The plane through the observer and the other edge: this edge crosses it between its ends or not
+  // at all.
+  const start = dot(normal, [from[0] - observer[0], from[1] - observer[1], from[2] - observer[2]]);
+  const end = dot(normal, [to[0] - observer[0], to[1] - observer[1], to[2] - observer[2]]);
+  if ((start > 0) === (end > 0) || Math.abs(start - end) <= DEGENERATE) return null;
+
+  const parameter = start / (start - end);
+  if (!(parameter > 1e-6) || !(parameter < 1 - 1e-6)) return null;
+
+  // Crossing the plane is not crossing the edge: the ray has to pass between the other edge's own
+  // two ends, and in front of the observer rather than behind them.
+  const point = pointAt(from, to, parameter);
+  const ray: SolidPoint = [point[0] - observer[0], point[1] - observer[1], point[2] - observer[2]];
+  if (dot(ray, [left[0] + right[0], left[1] + right[1], left[2] + right[2]]) <= 0) return null;
+  return dot(normal, crossProduct(left, ray)) * dot(normal, crossProduct(ray, right)) >= 0 ? parameter : null;
+}
+
+// Outward, averaged over the two faces an edge borders, so a sample lifted along it leaves the
+// surface whichever of the two it is nearer.
+function edgeNormal(solid: GlyphSolid, edge: SolidEdge): SolidPoint {
+  const [left, right] = edge.faces.map((index) => solid.faces[index].normal);
+  const sum: SolidPoint = [left[0] + right[0], left[1] + right[1], left[2] + right[2]];
+  const size = Math.hypot(sum[0], sum[1], sum[2]);
+  return size <= DEGENERATE ? left : [sum[0] / size, sum[1] / size, sum[2] / size];
+}
+
+function vertexNormal(solid: GlyphSolid, vertex: number): SolidPoint | null {
+  const sum: [number, number, number] = [0, 0, 0];
+  for (const face of solid.faces) {
+    if (!face.vertices.includes(vertex)) continue;
+    for (let axis = 0; axis < 3; axis += 1) sum[axis] += face.normal[axis];
+  }
+  const size = Math.hypot(sum[0], sum[1], sum[2]);
+  return size <= DEGENERATE ? null : [sum[0] / size, sum[1] / size, sum[2] / size];
+}
+
+function reachOf(solid: GlyphSolid): number {
+  const centre: [number, number, number] = [0, 0, 0];
+  for (const vertex of solid.vertices) for (let axis = 0; axis < 3; axis += 1) centre[axis] += vertex[axis] / solid.vertices.length;
+
+  let reach = 0;
+  for (const vertex of solid.vertices) reach = Math.max(reach, Math.hypot(vertex[0] - centre[0], vertex[1] - centre[1], vertex[2] - centre[2]));
+  return reach;
+}
+
+function pointAt(from: SolidPoint, to: SolidPoint, amount: number): SolidPoint {
+  return [from[0] + (to[0] - from[0]) * amount, from[1] + (to[1] - from[1]) * amount, from[2] + (to[2] - from[2]) * amount];
+}
+
+function unit(vector: SolidPoint): SolidPoint | null {
+  const size = Math.hypot(vector[0], vector[1], vector[2]);
+  return size <= DEGENERATE ? null : [vector[0] / size, vector[1] / size, vector[2] / size];
+}
+
+function crossProduct(left: SolidPoint, right: SolidPoint): SolidPoint {
+  return [
+    left[1] * right[2] - left[2] * right[1],
+    left[2] * right[0] - left[0] * right[2],
+    left[0] * right[1] - left[1] * right[0],
+  ];
+}
+
+function dot(left: SolidPoint, right: SolidPoint): number {
+  return left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
 }
 
 // Which edges an observer can see. The test is per face - a face is front-facing when the observer
@@ -205,13 +333,14 @@ export function buildPrism(outline: readonly PlanePoint[], depth: number): Glyph
 // err for a glyph that must never look partial.
 export function classifyEdges(solid: GlyphSolid, observer: SolidPoint): EdgeVisibility[] {
   const frontFacing = solid.faces.map((face) => isFrontFacing(face, observer));
+  return solid.edges.map((edge) => edgeVisibility(frontFacing, edge));
+}
 
-  return solid.edges.map((edge) => {
-    const [left, right] = edge.faces;
-    if (frontFacing[left] && frontFacing[right]) return "interior";
-    if (frontFacing[left] || frontFacing[right]) return "silhouette";
-    return "hidden";
-  });
+function edgeVisibility(frontFacing: readonly boolean[], edge: SolidEdge): EdgeVisibility {
+  const [left, right] = edge.faces;
+  if (frontFacing[left] && frontFacing[right]) return "interior";
+  if (frontFacing[left] || frontFacing[right]) return "silhouette";
+  return "hidden";
 }
 
 export function isFrontFacing(face: SolidFace, observer: SolidPoint): boolean {
@@ -231,68 +360,11 @@ export function mapSolid(
   mapDirection: (direction: SolidPoint) => SolidPoint,
 ): GlyphSolid {
   return {
+    ...solid,
     vertices: solid.vertices.map(mapPosition),
     faces: solid.faces.map((face) => ({ vertices: face.vertices, normal: mapDirection(face.normal), centre: mapPosition(face.centre) })),
     edges: solid.edges,
   };
-}
-
-// The horizontal span a closed outline covers at one height, from its own crossings of that line.
-// A concave outline can cross more than twice; the extremes are what bound the body.
-export function spanAt(profile: readonly PlanePoint[], y: number): [number, number] | null {
-  let low = Infinity;
-  let high = -Infinity;
-
-  for (let index = 0; index < profile.length; index += 1) {
-    const from = profile[index];
-    const to = profile[(index + 1) % profile.length];
-    if ((from[1] > y) === (to[1] > y)) continue;
-    const x = from[0] + ((to[0] - from[0]) * (y - from[1])) / (to[1] - from[1]);
-    low = Math.min(low, x);
-    high = Math.max(high, x);
-  }
-
-  return Number.isFinite(low) && Number.isFinite(high) ? [low, high] : null;
-}
-
-// The direction an outline is longest in, by the principal axis of its own points. A figure is
-// authored upright and the fit may only lean it a little, so an axis that has wandered far from
-// the vertical means the outline has no long direction worth turning about, and the upright is kept.
-const UPRIGHT_TOLERANCE = Math.cos(Math.PI / 4);
-
-function principalAxis(profile: readonly PlanePoint[]): PlanePoint {
-  const centre = centroidOf(profile);
-  let xx = 0;
-  let xy = 0;
-  let yy = 0;
-  for (const point of profile) {
-    const dx = point[0] - centre[0];
-    const dy = point[1] - centre[1];
-    xx += dx * dx;
-    xy += dx * dy;
-    yy += dy * dy;
-  }
-
-  // Largest eigenvector of the symmetric 2x2 covariance, in closed form.
-  const spread = Math.hypot(xx - yy, 2 * xy);
-  if (spread <= DEGENERATE) return [0, 1];
-  const largest = (xx + yy + spread) / 2;
-  const raw: PlanePoint = Math.abs(xy) > DEGENERATE ? [largest - yy, xy] : xx >= yy ? [1, 0] : [0, 1];
-  const size = Math.hypot(raw[0], raw[1]);
-  if (size <= DEGENERATE) return [0, 1];
-
-  const unit: PlanePoint = raw[1] >= 0 ? [raw[0] / size, raw[1] / size] : [-raw[0] / size, -raw[1] / size];
-  return unit[1] >= UPRIGHT_TOLERANCE ? unit : [0, 1];
-}
-
-function centroidOf(profile: readonly PlanePoint[]): PlanePoint {
-  let x = 0;
-  let y = 0;
-  for (const point of profile) {
-    x += point[0] / profile.length;
-    y += point[1] / profile.length;
-  }
-  return [x, y];
 }
 
 function solidFromTriangles(vertices: readonly SolidPoint[], triangles: readonly [number, number, number][], drawn: ReadonlySet<string>): GlyphSolid | null {
@@ -342,95 +414,6 @@ function triangleFace(vertices: readonly SolidPoint[], [a, b, c]: readonly [numb
     normal: [normal[0] / size, normal[1] / size, normal[2] / size],
     centre: [(first[0] + second[0] + third[0]) / 3, (first[1] + second[1] + third[1]) / 3, (first[2] + second[2] + third[2]) / 3],
   };
-}
-
-// Ear clipping, because a fan from the centre would lay triangles outside a concave outline and
-// those would occlude sky the body does not fill.
-function triangulate(profile: readonly PlanePoint[]): [number, number, number][] {
-  const remaining = profile.map((_, index) => index);
-  const triangles: [number, number, number][] = [];
-  let attempts = profile.length * profile.length;
-
-  while (remaining.length > 3 && attempts > 0) {
-    attempts -= 1;
-    let clipped = false;
-
-    for (let position = 0; position < remaining.length; position += 1) {
-      const previous = remaining[(position + remaining.length - 1) % remaining.length];
-      const current = remaining[position];
-      const next = remaining[(position + 1) % remaining.length];
-      if (!isEar(profile, remaining, previous, current, next)) continue;
-
-      triangles.push([previous, current, next]);
-      remaining.splice(position, 1);
-      clipped = true;
-      break;
-    }
-
-    // A self-touching outline can leave no ear at all. Whatever has been clipped so far still makes
-    // a usable cap, and the wall is what carries the silhouette.
-    if (!clipped) break;
-  }
-
-  if (remaining.length === 3) triangles.push([remaining[0], remaining[1], remaining[2]]);
-  return triangles;
-}
-
-function isEar(profile: readonly PlanePoint[], remaining: readonly number[], previous: number, current: number, next: number): boolean {
-  if (cross(profile[previous], profile[current], profile[next]) <= DEGENERATE) return false;
-
-  for (const index of remaining) {
-    if (index === previous || index === current || index === next) continue;
-    if (isInside(profile[index], profile[previous], profile[current], profile[next])) return false;
-  }
-  return true;
-}
-
-function isInside(point: PlanePoint, a: PlanePoint, b: PlanePoint, c: PlanePoint): boolean {
-  return cross(a, b, point) >= 0 && cross(b, c, point) >= 0 && cross(c, a, point) >= 0;
-}
-
-function cross(a: PlanePoint, b: PlanePoint, c: PlanePoint): number {
-  return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-}
-
-// An authored stroke closes a shape by repeating its first point, which would otherwise become a
-// zero-length wall.
-function closedProfile(outline: readonly PlanePoint[]): PlanePoint[] {
-  const points = outline.filter((point, index) => index === 0 || Math.hypot(point[0] - outline[index - 1][0], point[1] - outline[index - 1][1]) > DEGENERATE);
-  if (points.length < 2) return [];
-  const [first] = points;
-  const last = points[points.length - 1];
-  return Math.hypot(first[0] - last[0], first[1] - last[1]) <= DEGENERATE ? points.slice(0, -1) : points;
-}
-
-// The half-depths arrive one per authored point, so they have to survive the same duplicate removal
-// and rewinding the outline did.
-function alignDepths(outline: readonly PlanePoint[], profile: readonly PlanePoint[], halfDepths: readonly number[], forward: boolean): number[] {
-  const kept = outline
-    .map((point, index) => ({ point, depth: halfDepths[index] ?? halfDepths[halfDepths.length - 1] }))
-    .filter((entry, index) => index === 0 || Math.hypot(entry.point[0] - outline[index - 1][0], entry.point[1] - outline[index - 1][1]) > DEGENERATE)
-    .slice(0, profile.length)
-    .map((entry) => entry.depth);
-
-  while (kept.length < profile.length) kept.push(kept[kept.length - 1] ?? 0);
-  return forward ? kept : [...kept].reverse();
-}
-
-export function isClosedStroke(points: readonly PlanePoint[]): boolean {
-  if (points.length < 4) return false;
-  const [first] = points;
-  const last = points[points.length - 1];
-  return Math.hypot(first[0] - last[0], first[1] - last[1]) <= DEGENERATE;
-}
-
-function signedArea(profile: readonly PlanePoint[]): number {
-  let total = 0;
-  for (let index = 0; index < profile.length; index += 1) {
-    const next = (index + 1) % profile.length;
-    total += profile[index][0] * profile[next][1] - profile[next][0] * profile[index][1];
-  }
-  return total / 2;
 }
 
 function edgeKey(from: number, to: number): string {

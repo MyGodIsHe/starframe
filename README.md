@@ -25,6 +25,53 @@ npm run dev
 The development server prints its local URL. The application loads the
 generated universe dataset from `public/data/`.
 
+`/sigil.html` is a second page: one Sigil Figure on its own, which you turn by
+walking the observer round it. It is where a figure's body is judged, because the
+only question that matters for a body is whether it reads from every side. It opens
+on the bolt and also holds the atom and the ring - the three figures this repository
+generates for itself - and any figure imported into the library appears beside them.
+
+## Sigil Figures
+
+A Constellation Glyph wears a Sigil Figure, and a figure needs a body with a real
+far side for the glyph to hide. Every figure is therefore a sculpted model. Building
+bodies out of flat line art was tried first and dropped: a drawing has to be given
+depth by rule, and every such rule is a guess about a shape nobody drew.
+
+A fresh clone has three figures, and every Constellation wears one of them. All
+three are generated, because each is a subject a rule describes exactly rather than
+approximately. The ring in `src/constellations/sigilRing.ts` is two radii and two
+counts. The atom in `src/constellations/sigilAtom.ts` is a core and two shells built
+out of that same tube, set square to each other so they cross at the widest angle
+they can from whatever side an observer stands on, with its anchors where an
+electron would be. The bolt in `src/constellations/sigilBolt.ts` is two wedges meeting
+along a crossbar, each running from a point out to its elbow, with the corner at
+each elbow worked out as the mitre between them. Its section is a diamond, so a
+ridge runs the length of the stroke front and back: face on it is the outline with a
+crease down the middle, and from any one side the near ridge is drawn while the far
+one is covered by the body's own thickness. The zigzag lies flat in the plane of its
+own silhouette and both ridges stand off it equally, so the body is exactly its own
+mirror image in that plane - down to which way each patch of its surface is
+triangulated, which its tests check. So none of them
+costs anybody's work. Every other subject needs a model, and **no
+imported model is committed to this repository** - a model is somebody else's sculpture, and whether
+it may be redistributed is their decision rather than a star map's. Importing one is
+therefore a step each build takes for itself, over a model it has the right to use:
+
+```sh
+npx tsx scripts/import-sigil-model.ts path/to/model.stl --name=wolf
+```
+
+The importer cuts off a print's display plinth if asked (`--floor`), reduces the
+mesh to a triangle budget the facing test can run every frame (`--faces`), marks
+the creases sharp enough to be part of the drawing (`--crease`), and marks the
+extremities a real Solar System is meant to land on (`--anchors`). It writes
+`src/data/sigil-models/<name>.json` and refuses to write a surface that is not
+closed. Add that file to the list in `src/constellations/sigilModel.ts` - that list
+is the figure library - then check the result on `/sigil.html?figure=<name>`. Which
+Constellation wears which figure comes from `src/data/constellation-motifs.json`,
+regenerated with `scripts/generate-motifs.ts`.
+
 ## Checks
 
 ```sh

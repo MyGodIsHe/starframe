@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { ErrorBoundary, SceneError } from "./ErrorBoundary";
+import { RepositoryLink } from "./RepositoryLink";
 import { type CameraState, SceneViewport } from "./SpaceScene";
 import { LOCAL_SYSTEM_SCENE_UNITS_PER_METER } from "./localSystemProjection";
 import { selectRenderQuality, type RenderQuality } from "./renderQuality";
@@ -221,6 +222,7 @@ export default function App(): ReactNode {
           {travel ? `${travelStatus(travel.phase)} ` : ""}{activeGateDestination ? `Stargate destination: ${activeGateDestination.name}. Jump preview: ${activePreview ? activePreview.systems.map((previewSystem) => previewSystem.name).join(", ") : ""}. ` : ""}{activeSystem?.name ?? "Unknown system"} local system. Camera distance {camera.distance.toFixed(2)}. Camera bearing {camera.azimuth.toFixed(2)}. Rotate by dragging and zoom with the wheel or pinch gesture.
         </output>
         <p className="interaction-hint" aria-hidden="true">Drag to orbit. Scroll or pinch to adjust distance.</p>
+        <RepositoryLink />
         <p className="data-attribution">© 2014 CCP hf. All rights reserved. "EVE", "EVE Online", "CCP", and all related logos and images are trademarks or registered trademarks of CCP hf. Starframe is not endorsed by or affiliated with CCP.</p>
       </main>
     </ErrorBoundary>

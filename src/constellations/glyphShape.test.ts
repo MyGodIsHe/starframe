@@ -1,15 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { buildGlyphShape, type GlyphShape } from "./glyphShape";
-import type { SigilFigure } from "./sigilFigure";
+import { readSigilModel } from "./sigilModel";
+import { buildRing } from "./sigilRing";
 import type { Vector3 } from "../universe/generateUniverse";
 
-// A closed head over an open shaft, the way every figure in the library is built: the closed
-// outline becomes the body and the open line is struck on its caps.
-const FIGURE: SigilFigure = {
-  name: "arrow",
-  strokes: [[[0, -1], [0, 0.5]], [[-0.4, 0.5], [0, 1], [0.4, 0.5], [-0.4, 0.5]]],
-  anchors: [[0, 1], [0, -1], [-0.4, 0.5], [0.4, 0.5]],
-};
+// The one figure a fresh clone has: generated, not imported, and the same body `/sigil.html` turns.
+const FIGURE = readSigilModel(buildRing())!;
 
 // A constellation lying almost exactly in the x/y plane.
 const FLAT = [
@@ -28,35 +24,41 @@ const DEEP = FLAT.map((system, index) => ({
 
 function allPoints(shape: GlyphShape): Vector3[] {
   return [
-    ...shape.strokes.flatMap((stroke) => [...stroke.points]),
+    ...shape.leads.flatMap((lead) => [lead.from, lead.to]),
     ...shape.solids.flatMap((solid) => solid.vertices.map((vertex) => [...vertex] as Vector3)),
   ];
 }
 
-// How thick the bodies stand through the plane they were fitted in, against how wide they are
-// across it: a body has to be thick in proportion to itself, not to the constellation around it.
+// How thick the body stands through the plane it was placed in, against how wide it is across it,
+// measured about the body's own centre: where in the constellation the fit put it is a different
+// question from what shape it is.
 function bodyThickness(shape: GlyphShape): number {
+  const vertices = shape.solids.flatMap((solid) => solid.vertices);
+  const centre = [0, 1, 2].map((axis) => vertices.reduce((total, vertex) => total + vertex[axis] / vertices.length, 0));
   let least = Infinity;
   let most = -Infinity;
   let across = 0;
-  for (const solid of shape.solids) {
-    for (const vertex of solid.vertices) {
-      const offset = [0, 1, 2].map((axis) => vertex[axis] - shape.centre[axis]);
-      const along = offset[0] * shape.normal[0] + offset[1] * shape.normal[1] + offset[2] * shape.normal[2];
-      least = Math.min(least, along);
-      most = Math.max(most, along);
-      across = Math.max(across, Math.hypot(offset[0] - shape.normal[0] * along, offset[1] - shape.normal[1] * along, offset[2] - shape.normal[2] * along));
-    }
+  for (const vertex of vertices) {
+    const offset = [0, 1, 2].map((axis) => vertex[axis] - centre[axis]);
+    const along = offset[0] * shape.normal[0] + offset[1] * shape.normal[1] + offset[2] * shape.normal[2];
+    least = Math.min(least, along);
+    most = Math.max(most, along);
+    across = Math.max(across, Math.hypot(offset[0] - shape.normal[0] * along, offset[1] - shape.normal[1] * along, offset[2] - shape.normal[2] * along));
   }
   return Number.isFinite(least) && across > 0 ? (most - least) / (2 * across) : 0;
 }
 
-function planeResiduals(points: readonly Vector3[]): number {
-  // Spread along the least-populated axis of the point cloud, as a share of its overall size.
-  const centre: Vector3 = [0, 0, 0];
-  for (const point of points) for (let axis = 0; axis < 3; axis += 1) centre[axis] += point[axis] / points.length;
-  const spreads = [0, 1, 2].map((axis) => Math.sqrt(points.reduce((total, point) => total + (point[axis] - centre[axis]) ** 2, 0) / points.length));
-  return Math.min(...spreads) / Math.max(...spreads, 1e-9);
+// The same measurement taken of the model itself, in its own space, where its centre is the origin.
+function modelThickness(): number {
+  let least = Infinity;
+  let most = -Infinity;
+  let across = 0;
+  for (const vertex of FIGURE.solid.vertices) {
+    least = Math.min(least, vertex[2]);
+    most = Math.max(most, vertex[2]);
+    across = Math.max(across, Math.hypot(vertex[0], vertex[1]));
+  }
+  return (most - least) / (2 * across);
 }
 
 describe("buildGlyphShape", () => {
@@ -89,17 +91,24 @@ describe("buildGlyphShape", () => {
     }
   });
 
-  it("gives the figure a body to hide behind, deeper for a deeper constellation", () => {
-    const flat = bodyThickness(buildGlyphShape(FLAT, FIGURE)!);
-    const deep = bodyThickness(buildGlyphShape(DEEP, FIGURE)!);
+  it("keeps the body the shape it was sculpted as, whatever the constellation is like", () => {
+    // The depth used to be taken from how far the Solar Systems sat off their own plane, because a
+    // drawing has no depth of its own to take it from. A model does, and it is the artwork: a flat
+    // constellation and a deep one wear the same figure, at the same proportions it was sculpted in.
+    expect(bodyThickness(buildGlyphShape(FLAT, FIGURE)!)).toBeCloseTo(modelThickness(), 6);
+    expect(bodyThickness(buildGlyphShape(DEEP, FIGURE)!)).toBeCloseTo(modelThickness(), 6);
+  });
 
-    // Real constellations are far too flat to supply the depth themselves - a median 0.126 of their
-    // radius - so the proportion is the artwork's and every figure gets a body. What the data still
-    // decides is where inside the allowed band a constellation falls, and the band is wide enough
-    // that a deep cloud comes out visibly fuller than a flat one.
-    expect(flat).toBeGreaterThan(0.1);
-    expect(deep).toBeGreaterThan(flat * 1.4);
-    expect(planeResiduals(allPoints(buildGlyphShape(FLAT, FIGURE)!))).toBeGreaterThan(0.1);
+  it("ties a Solar System the figure never reached, and leaves the rest alone", () => {
+    // One system pulled well outside the ring, where no part of the body can be near it.
+    const stray = [...FLAT.slice(0, 4), { id: 5, position: [-9e15, -2.4e16, 0] as Vector3 }];
+    const shape = buildGlyphShape(stray, FIGURE)!;
+
+    expect(shape.leads.length).toBeGreaterThan(0);
+    expect(shape.leads.length).toBeLessThan(stray.length);
+    for (const lead of shape.leads) {
+      expect(Math.hypot(lead.from[0] - lead.to[0], lead.from[1] - lead.to[1], lead.from[2] - lead.to[2])).toBeGreaterThan(0);
+    }
   });
 
   it("never lets one far-flung system spike the artwork into a needle", () => {

@@ -2,7 +2,7 @@ import { travelSkyProgress, type TravelFrame } from "../travelCoordinates";
 import type { Vector3 } from "../universe/generateUniverse";
 import { boundsOf, selectVisibleConstellationIds, type GlyphBounds } from "./glyphVisibility";
 import { buildGlyphShape, type GlyphShape } from "./glyphShape";
-import { classifyEdges } from "./glyphSolid";
+import { drawnEdges } from "./glyphSolid";
 import { figureForConstellation } from "./sigilMotifs";
 
 export const CELESTIAL_MAP_RADIUS = 24;
@@ -45,11 +45,11 @@ export type ConstellationGlyphNode = {
 // One drawn line of a glyph.
 //
 // "silhouette" is where the body turns away from the observer and "interior" is an edge on its near
-// side; between them they are the authored artwork seen from somewhere, and an edge behind the body
-// is simply not here. "figure" is an open line struck on the body's near cap, "lead" the short tie
-// from a real Solar System. None of them ever stands for a Stargate link.
+// side; between them they are the sculpted figure seen from somewhere, and an edge behind the body
+// is simply not here. "lead" is the short tie from a real Solar System the figure did not reach.
+// Neither ever stands for a Stargate link.
 export type ConstellationGlyphStroke = {
-  kind: "silhouette" | "interior" | "figure" | "lead";
+  kind: "silhouette" | "interior" | "lead";
   from: Vector3;
   to: Vector3;
   opacity: number;
@@ -86,7 +86,7 @@ export function compileConstellationGlyphIndex(systems: readonly ConstellationSy
 
     const extent = [
       ...members.map((member) => member.position),
-      ...(shape?.strokes.flatMap((stroke) => stroke.points) ?? []),
+      ...(shape?.leads.flatMap((lead) => [lead.from, lead.to]) ?? []),
       ...(shape?.solids.flatMap((solid) => solid.vertices as readonly Vector3[]) ?? []),
     ];
     const bounds = boundsOf(constellationId, extent);
@@ -202,34 +202,15 @@ function projectShape(
   // home glyph keeps its ties to the stars and wears no artwork.
   if (!isHome) {
     for (const solid of shape.solids) {
-      const visibility = classifyEdges(solid, observerPosition);
-      for (const [index, edge] of solid.edges.entries()) {
-        // A structural edge holds the surface together and still decides what it hides; it was
-        // never part of the drawing.
-        if (!edge.drawn || visibility[index] === "hidden") continue;
-        emit(visibility[index], solid.vertices[edge.from] as Vector3, solid.vertices[edge.to] as Vector3);
-      }
+      // A structural edge holds the surface together and still decides what it hides; it was never
+      // part of the drawing, and neither is any stretch of a line the body itself stands in front of.
+      for (const line of drawnEdges(solid, observerPosition)) emit(line.kind, line.from as Vector3, line.to as Vector3);
     }
   }
 
-  const nearCapFaces = facesObserver(shape, observerPosition);
-  for (const stroke of shape.strokes) {
-    if (isHome && stroke.kind === "figure") continue;
-    // A line struck on the cap turned away from the observer is behind the body, like any other
-    // far-side edge.
-    if (stroke.side !== 0 && (stroke.side === 1) !== nearCapFaces) continue;
-    for (let index = 0; index + 1 < stroke.points.length; index += 1) emit(stroke.kind, stroke.points[index], stroke.points[index + 1]);
-  }
+  for (const lead of shape.leads) emit("lead", lead.from, lead.to);
 
   return strokes;
-}
-
-function facesObserver(shape: GlyphShape, observerPosition: Vector3): boolean {
-  return (
-    shape.normal[0] * (observerPosition[0] - shape.centre[0]) +
-    shape.normal[1] * (observerPosition[1] - shape.centre[1]) +
-    shape.normal[2] * (observerPosition[2] - shape.centre[2])
-  ) > 0;
 }
 
 // A stroke's depth cue comes from the real Solar Systems it runs past, weighted by how closely it

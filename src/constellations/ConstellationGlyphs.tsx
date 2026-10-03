@@ -5,12 +5,12 @@ import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import type { RenderQuality } from "../renderQuality";
+import { glyphBucketStyles, glyphStrokeIntensity, writeGlyphColor, GLYPH_BUCKET_BY_KIND, GLYPH_BUCKET_COUNT } from "./glyphLineStyle";
 import type { TravelFrame } from "../travelCoordinates";
 import {
   projectTravelConstellationGlyphs,
   type ConstellationGlyph,
   type ConstellationGlyphIndex,
-  type ConstellationGlyphStroke,
 } from "./constellationGlyphModel";
 
 type GlyphLineBucket = {
@@ -113,33 +113,15 @@ function createRenderState(profile: RenderQuality["name"], glyphs: readonly Cons
   return state;
 }
 
-// One bucket per kind of line, ordered the way the drawing reads: the outline where the body turns
-// away is the strongest and most haloed line, an edge on the near side is subordinate to it, an
-// open line struck on the near cap is quieter still, and a lead is barely there - a tie is
-// bookkeeping, and it must never compete with either the artwork or the stars themselves.
-//
-// The ladder used to run on depth instead, but a glyph's strokes nearly all share one depth: 77% of
-// drawn glyphs put every stroke in a single bucket, so the width and weight never varied inside a
-// figure. Depth still rides along, in colour and in each stroke's own opacity.
-const BUCKET_COUNT = 4;
-const BUCKET_BY_KIND: Record<ConstellationGlyphStroke["kind"], number> = { figure: 0, interior: 1, silhouette: 2, lead: 3 };
-const STROKE_FLOOR: Record<ConstellationGlyphStroke["kind"], number> = { silhouette: 0.62, interior: 0.42, figure: 0.34, lead: 0.26 };
-const STROKE_DEPTH_GAIN: Record<ConstellationGlyphStroke["kind"], number> = { silhouette: 0.38, interior: 0.4, figure: 0.4, lead: 0.3 };
-
+// The ladder itself - which line is strongest, how wide, how bright, and what colour depth makes it
+// - lives in `glyphLineStyle`, because the sky is not the only place a glyph is drawn.
 function createLineBuckets(profile: RenderQuality["name"], capacity: number): GlyphLineBucket[] {
-  const coreWidths = profile === "mobile" ? [0.5, 0.8, 1.15, 0.42] : [0.65, 1.05, 1.5, 0.55];
-  const haloWidths = profile === "mobile" ? [1.8, 2.3, 2.7, 1.2] : [2.4, 3, 3.5, 1.6];
-  const coreOpacities = [0.48, 0.68, 0.9, 0.34];
-  // The outline carries the glow, so the halo now climbs with the ladder instead of standing in for
-  // distance.
-  const haloOpacities = [0.09, 0.14, 0.22, 0.05];
-
-  return Array.from({ length: BUCKET_COUNT }, (_, bucket) => createLineBucket(
+  return glyphBucketStyles(profile).map((style, bucket) => createLineBucket(
     capacity,
-    haloWidths[bucket],
-    coreWidths[bucket],
-    haloOpacities[bucket],
-    coreOpacities[bucket],
+    style.haloWidth,
+    style.coreWidth,
+    style.haloOpacity,
+    style.coreOpacity,
     -30 + bucket * 2,
   ));
 }
@@ -229,7 +211,7 @@ function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: Glyph
     for (const stroke of glyph.strokes) {
       if (stroke.opacity <= 0.001) continue;
       const isOrnament = stroke.kind === "lead";
-      const bucketIndex = BUCKET_BY_KIND[stroke.kind];
+      const bucketIndex = GLYPH_BUCKET_BY_KIND[stroke.kind];
       const bucket = state.buckets[bucketIndex];
       const strokeIndex = strokeCounts[bucketIndex];
       const offset = strokeIndex * 6;
@@ -237,9 +219,7 @@ function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: Glyph
       bucket.positions.set(stroke.to, offset + 3);
       writeGlyphColor(bucket.colors, offset, stroke.proximity, isOrnament);
       writeGlyphColor(bucket.colors, offset + 3, stroke.proximity, isOrnament);
-      // Each kind keeps a floor of its own, so a far glyph still reads as an outline with detail
-      // inside it rather than dissolving into one even wash.
-      const intensity = stroke.opacity * (STROKE_FLOOR[stroke.kind] + stroke.proximity * STROKE_DEPTH_GAIN[stroke.kind]);
+      const intensity = glyphStrokeIntensity(stroke.kind, stroke.opacity, stroke.proximity);
       bucket.opacityStart.setX(strokeIndex, intensity);
       bucket.opacityEnd.setX(strokeIndex, intensity);
       strokeCounts[bucketIndex] += 1;
@@ -256,7 +236,7 @@ function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: Glyph
     }
   }
 
-  for (let bucketIndex = 0; bucketIndex < BUCKET_COUNT; bucketIndex += 1) {
+  for (let bucketIndex = 0; bucketIndex < GLYPH_BUCKET_COUNT; bucketIndex += 1) {
     const bucket = state.buckets[bucketIndex];
     bucket.geometry.instanceCount = strokeCounts[bucketIndex];
     interleavedData(bucket.geometry, "instanceStart").needsUpdate = true;
@@ -310,19 +290,6 @@ function resizeNodes(nodes: GlyphNodes, capacity: number): void {
   nodes.object.geometry.setAttribute("color", new BufferAttribute(nodes.colors, 3).setUsage(DynamicDrawUsage));
   nodes.object.geometry.setAttribute("opacity", new BufferAttribute(nodes.opacities, 1).setUsage(DynamicDrawUsage));
   nodes.object.geometry.setAttribute("size", new BufferAttribute(nodes.sizes, 1).setUsage(DynamicDrawUsage));
-}
-
-function writeGlyphColor(target: Float32Array, offset: number, proximity: number, isOrnament = false): void {
-  const red = 98 + (85 - 98) * proximity;
-  const green = 91 + (223 - 91) * proximity;
-  const blue = 220 + (255 - 220) * proximity;
-  // A lead line shares the depth ramp but sits closer to mid-grey, so it reads as a faint tie
-  // rather than as part of the drawing.
-  const mix = isOrnament ? 0.45 : 0;
-  const grey = (red + green + blue) / 3;
-  target[offset] = (red + (grey - red) * mix) / 255;
-  target[offset + 1] = (green + (grey - green) * mix) / 255;
-  target[offset + 2] = (blue + (grey - blue) * mix) / 255;
 }
 
 function interleavedData(geometry: LineSegmentsGeometry, attribute: string): InterleavedBufferAttribute["data"] {

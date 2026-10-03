@@ -7,15 +7,14 @@
 //   npx tsx scripts/glyph-sheet.ts --sigils    sigil sheet only
 //   npx tsx scripts/glyph-sheet.ts --png       also rasterise, for viewing without a browser
 //   npx tsx scripts/glyph-sheet.ts --rows=8    only the first N rows of the sigil sheet
-//   npx tsx scripts/glyph-sheet.ts --figures   the raw figure library, unfitted, with its anchors
 //   npx tsx scripts/glyph-sheet.ts --turntable a few glyphs walked round, to judge their volume
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { compileConstellationGlyphIndex, projectConstellationGlyphs } from "../src/constellations/constellationGlyphModel";
 import type { GlyphShape } from "../src/constellations/glyphShape";
-import { classifyEdges } from "../src/constellations/glyphSolid";
-import { figureForConstellation, SIGIL_FIGURES } from "../src/constellations/sigilMotifs";
+import { drawnEdges } from "../src/constellations/glyphSolid";
+import { figureForConstellation } from "../src/constellations/sigilMotifs";
 import type { Vector3 } from "../src/universe/generateUniverse";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -41,42 +40,30 @@ const SKY_COLUMNS = 3;
 const SIGIL_CELL = 150;
 const SIGIL_COLUMNS = 20;
 
-const FIGURES = SIGIL_FIGURES;
-
 const SKELETON_COLOUR = "#57d8f5";
 const ORNAMENT_COLOUR = "#8f93c4";
 const HOME_COLOUR = "#3b3f6b";
 
 // The drawing's own ladder, the same one the app renders: the outline where the body turns away,
-// then the edges on its near side, then open lines struck on the near cap, then the ties.
+// then the edges on its near side, then the ties.
 const LINE_STYLE = {
   silhouette: { colour: SKELETON_COLOUR, weight: 1.5, opacity: 1 },
   interior: { colour: "#3ba6cc", weight: 0.9, opacity: 0.8 },
-  figure: { colour: "#8fd9ea", weight: 0.8, opacity: 0.7 },
   lead: { colour: ORNAMENT_COLOUR, weight: 0.5, opacity: 0.55 },
 } as const;
 
 type SheetLine = { kind: keyof typeof LINE_STYLE; points: Vector3[] };
 
-// What one observer actually sees of a glyph: the body's visible edges, plus the open lines struck
-// on whichever cap is turned towards them. Built from the same functions the app uses, so the sheet
-// cannot drift away from what a pilot gets.
+// What one observer actually sees of a glyph: the body's visible edges, plus the ties to the Solar
+// Systems it did not reach. Built from the same function the app calls, so the sheet cannot drift
+// away from what a pilot gets.
 function drawnLines(shape: GlyphShape, observer: Vector3): SheetLine[] {
   const lines: SheetLine[] = [];
 
   for (const solid of shape.solids) {
-    const visibility = classifyEdges(solid, observer);
-    solid.edges.forEach((edge, position) => {
-      if (!edge.drawn || visibility[position] === "hidden") return;
-      lines.push({ kind: visibility[position], points: [solid.vertices[edge.from] as Vector3, solid.vertices[edge.to] as Vector3] });
-    });
+    for (const line of drawnEdges(solid, observer)) lines.push({ kind: line.kind, points: [line.from as Vector3, line.to as Vector3] });
   }
-
-  const nearCapFaces = shape.normal[0] * (observer[0] - shape.centre[0]) + shape.normal[1] * (observer[1] - shape.centre[1]) + shape.normal[2] * (observer[2] - shape.centre[2]) > 0;
-  for (const stroke of shape.strokes) {
-    if (stroke.side !== 0 && (stroke.side === 1) !== nearCapFaces) continue;
-    lines.push({ kind: stroke.kind, points: [...stroke.points] });
-  }
+  for (const lead of shape.leads) lines.push({ kind: "lead", points: [lead.from, lead.to] });
   return lines;
 }
 
@@ -234,37 +221,6 @@ function sigilSheet(): string {
 
 // The library on its own, before any constellation pulls it about: the only way to tell whether a
 // figure reads as a wolf at all is to look at it drawn straight.
-function figureSheet(): string {
-  const figures = FIGURES;
-  const columns = Math.min(5, figures.length);
-  const rows = Math.ceil(figures.length / columns);
-  const cell = 240;
-  const width = columns * cell;
-  const height = rows * cell;
-  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#05060d"/>`];
-
-  figures.forEach((figure, position) => {
-    const originX = (position % columns) * cell + cell / 2;
-    const originY = Math.floor(position / columns) * cell + cell / 2 - 6;
-    const fit = (cell - 56) / 2;
-    const screen = (x: number, y: number): [number, number] => [originX + x * fit, originY - y * fit];
-
-    for (const stroke of figure.strokes) {
-      const points = stroke.map(([x, y]) => screen(x, y).map((value) => value.toFixed(1)).join(",")).join(" ");
-      parts.push(`<polyline points="${points}" fill="none" stroke="${SKELETON_COLOUR}" stroke-width="1.6" stroke-linejoin="round" opacity="0.95"/>`);
-    }
-    for (const [x, y] of figure.anchors) {
-      const [px, py] = screen(x, y);
-      parts.push(`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3.4" fill="none" stroke="#ffb347" stroke-width="1.2"/>`);
-    }
-    parts.push(`<text x="${originX}" y="${originY + cell / 2 - 14}" fill="#6f78a3" font-family="monospace" font-size="11" text-anchor="middle">${escapeXml(figure.name)} - ${figure.anchors.length} anchors</text>`);
-  });
-
-  parts.push("</svg>");
-  console.log(`figure sheet: ${figures.length} figures, anchors ${figures.map((figure) => figure.anchors.length).join("/")}`);
-  return parts.join("\n");
-}
-
 
 // A handful of glyphs walked all the way round, which is the only way to judge whether a figure has
 // volume: a flat drawing turned edge on collapses to a line, and a body does not. Each row is one
@@ -342,10 +298,9 @@ async function rasterise(name: string, svgWidth: number, svgHeight: number): Pro
 
 const rowsArgument = process.argv.find((argument) => argument.startsWith("--rows="));
 const sigilRowLimit = rowsArgument ? Number(rowsArgument.slice("--rows=".length)) : null;
-const wantsFigures = process.argv.includes("--figures");
 const wantsTurntable = process.argv.includes("--turntable");
 const turntableRows = rowsArgument ? Number(rowsArgument.slice("--rows=".length)) : 6;
-const special = wantsFigures || wantsTurntable;
+const special = wantsTurntable;
 const wantsSky = !special && (process.argv.includes("--sky") || !process.argv.includes("--sigils"));
 const wantsSigils = !special && (process.argv.includes("--sigils") || !process.argv.includes("--sky"));
 const wantsPng = process.argv.includes("--png");
@@ -353,14 +308,7 @@ const wantsPng = process.argv.includes("--png");
 mkdirSync(outputDir, { recursive: true });
 if (wantsSky) writeFileSync(resolve(outputDir, "sky.svg"), skySheet());
 if (wantsSigils) writeFileSync(resolve(outputDir, "sigils.svg"), sigilSheet());
-if (wantsFigures) writeFileSync(resolve(outputDir, "figures.svg"), figureSheet());
 if (wantsTurntable) writeFileSync(resolve(outputDir, "turntable.svg"), turntableSheet());
-
-if (wantsPng && wantsFigures) {
-  const figures = FIGURES;
-  const columns = Math.min(5, figures.length);
-  await rasterise("figures", columns * 240, Math.ceil(FIGURES.length / columns) * 240);
-}
 
 if (wantsPng && wantsTurntable) {
   await rasterise("turntable", TURN_STEPS * TURN_CELL, turntableRows * TURN_CELL);

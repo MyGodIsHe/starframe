@@ -1,15 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildBody, buildLathe, buildPrism, classifyEdges, isClosedStroke, mapSolid, spanAt, type GlyphSolid, type SolidPoint } from "./glyphSolid";
-
-// A unit cube, as the square outline a Sigil Figure would close, extruded through the Glyph Frame.
-const SQUARE = [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]] as const;
-
-// Wide at the foot, narrow at the head: a shape whose side view has to differ from a rectangle.
-const CONE = [[-1, -1], [1, -1], [0.2, 1], [-0.2, 1], [-1, -1]] as const;
-
-// An outline with a bite out of it, where a fan from the centre would lay triangles over sky the
-// body does not fill.
-const CONCAVE = [[-1, -1], [1, -1], [1, 1], [0.2, 1], [0.2, -0.2], [-0.2, -0.2], [-0.2, 1], [-1, 1], [-1, -1]] as const;
+import { buildModelSolid, classifyEdges, drawnEdges, isVertexVisible, mapSolid, type GlyphSolid, type SolidPoint } from "./glyphSolid";
+import { buildRing } from "./sigilRing";
+import { readSigilModel } from "./sigilModel";
 
 function tally(solid: GlyphSolid, observer: SolidPoint): Record<string, number> {
   const visibility = classifyEdges(solid, observer);
@@ -20,121 +12,165 @@ function tally(solid: GlyphSolid, observer: SolidPoint): Record<string, number> 
   return counts;
 }
 
-// Half the body's reach across the axis at one height, as the two views would see it.
-function reachAt(solid: GlyphSolid, y: number, axis: 0 | 2): number {
-  let reach = 0;
-  for (const vertex of solid.vertices) {
-    if (Math.abs(vertex[1] - y) > 0.25) continue;
-    reach = Math.max(reach, Math.abs(vertex[axis]));
-  }
-  return reach;
+// Two boxes, one squarely behind the other: the simplest body whose far part faces an observer and
+// is still covered by its near part, which is the case the facing test alone cannot answer.
+function boxAt(centre: SolidPoint, half: number, offset: number): { vertices: SolidPoint[]; triangles: [number, number, number][] } {
+  const vertices: SolidPoint[] = [-1, 1].flatMap((z) => [-1, 1].flatMap((y) => [-1, 1].map((x): SolidPoint => [centre[0] + x * half, centre[1] + y * half, centre[2] + z * half])));
+  const corners = [0, 1, 3, 2, 4, 5, 7, 6].map((index) => index + offset);
+  const [a, b, c, d, e, f, g, h] = corners;
+  return {
+    vertices,
+    triangles: [
+      [a, c, b], [a, d, c],
+      [e, f, g], [e, g, h],
+      [a, b, f], [a, f, e],
+      [b, c, g], [b, g, f],
+      [c, d, h], [c, h, g],
+      [d, a, e], [d, e, h],
+    ],
+  };
 }
 
-function capArea(solid: GlyphSolid): number {
-  let total = 0;
-  for (const face of solid.faces) {
-    const [a, b, c] = face.vertices.map((index) => solid.vertices[index]);
-    // Only the caps lie in a plane of constant depth; the walls stand across it.
-    if (a[2] !== b[2] || b[2] !== c[2] || a[2] <= 0) continue;
-    total += Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2;
-  }
-  return total;
+function nestedBoxes(): GlyphSolid {
+  const near = boxAt([0, 0, 2], 1, 0);
+  const far = boxAt([0, 0, -2], 0.3, 8);
+  const vertices = [...near.vertices, ...far.vertices];
+  const triangles = [...near.triangles, ...far.triangles];
+  // Every edge is part of the drawing, so nothing is dropped for any reason but being covered.
+  const drawn = triangles.flatMap((triangle) => [[triangle[0], triangle[1]], [triangle[1], triangle[2]], [triangle[2], triangle[0]]] as [number, number][]);
+  return buildModelSolid(vertices, triangles, drawn)!;
 }
 
-describe("buildBody", () => {
-  it("closes the body, so every edge has two faces to be hidden by", () => {
-    const solid = buildPrism(SQUARE, 1)!;
+describe("drawnEdges", () => {
+  const observer: SolidPoint = [0, 0, 40];
 
-    expect(solid.vertices).toHaveLength(8);
-    for (const edge of solid.edges) {
-      expect(edge.faces[0]).not.toBe(edge.faces[1]);
-      for (const face of edge.faces) expect(face).toBeLessThan(solid.faces.length);
+  it("leaves a convex body exactly what the facing test gives it", () => {
+    const solid = buildModelSolid(boxAt([0, 0, 0], 1, 0).vertices, boxAt([0, 0, 0], 1, 0).triangles, [[0, 1], [1, 3], [3, 2], [2, 0]])!;
+    const visibility = classifyEdges(solid, observer);
+    const expected = solid.edges.filter((edge, index) => visibility[index] !== "hidden" && (edge.drawn || visibility[index] === "silhouette")).length;
+
+    // Nothing of a convex body stands in front of anything else of it, so no line is cut.
+    expect(drawnEdges(solid, observer)).toHaveLength(expected);
+  });
+
+  it("drops a line the body's own near side stands in front of", () => {
+    const solid = nestedBoxes();
+    const behind = drawnEdges(solid, observer).filter((line) => line.from[2] < 0 || line.to[2] < 0);
+
+    // The small far box sits entirely inside the near box's shadow, and the facing test alone would
+    // have drawn its four front edges straight through the near box.
+    expect(classifyEdges(solid, observer).filter((seen, index) => seen !== "hidden" && solid.vertices[solid.edges[index].from][2] < 0).length).toBeGreaterThan(0);
+    expect(behind).toHaveLength(0);
+  });
+
+  it("keeps the near side of the same body whole", () => {
+    const lines = drawnEdges(nestedBoxes(), observer);
+
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) {
+      expect(line.from[2]).toBeGreaterThan(0);
+      expect(line.to[2]).toBeGreaterThan(0);
     }
   });
 
-  it("draws the figure's own edges and not the triangulation holding it together", () => {
-    const solid = buildPrism(SQUARE, 1)!;
+  it("cuts a line where the body crosses it rather than dropping the whole of it", () => {
+    // A bar passing behind the near box, long enough to stick out on both sides of it.
+    const bar = boxAt([0, 0, -2], 0.2, 8);
+    const stretched = bar.vertices.map((vertex): SolidPoint => [vertex[0] * 20, vertex[1], vertex[2]]);
+    const near = boxAt([0, 0, 2], 1, 0);
+    const triangles = [...near.triangles, ...bar.triangles];
+    const drawn = triangles.flatMap((triangle) => [[triangle[0], triangle[1]], [triangle[1], triangle[2]], [triangle[2], triangle[0]]] as [number, number][]);
+    const solid = buildModelSolid([...near.vertices, ...stretched], triangles, drawn)!;
 
-    // Twelve edges of a cube, however many triangles the surface was cut into.
-    expect(solid.edges.filter((edge) => edge.drawn)).toHaveLength(12);
-    expect(solid.edges.filter((edge) => !edge.drawn).length).toBeGreaterThan(0);
-  });
-
-  it("points every normal outward whichever way the stroke was wound", () => {
-    for (const outline of [SQUARE, [...SQUARE].reverse()]) {
-      for (const face of buildPrism(outline, 1)!.faces) {
-        const outward = face.normal[0] * face.centre[0] + face.normal[1] * face.centre[1] + face.normal[2] * face.centre[2];
-        expect(outward).toBeGreaterThan(0);
-      }
+    const alongBar = drawnEdges(solid, observer).filter((line) => line.from[2] < 0 && line.to[2] < 0 && Math.abs(line.from[0] - line.to[0]) > 1);
+    expect(alongBar.length).toBeGreaterThan(0);
+    // Each surviving stretch runs out to one end of the bar and stops short of the box covering it.
+    for (const line of alongBar) {
+      const inner = Math.min(Math.abs(line.from[0]), Math.abs(line.to[0]));
+      expect(inner).toBeGreaterThan(0.5);
+      expect(Math.max(Math.abs(line.from[0]), Math.abs(line.to[0]))).toBeCloseTo(4, 1);
     }
   });
 
-  it("fills a concave outline without covering the bite taken out of it", () => {
-    const solid = buildBody(CONCAVE, CONCAVE.map(() => 1))!;
+  it("decides from the observer, so turning the camera round cannot restore a covered line", () => {
+    const solid = nestedBoxes();
 
-    // The outline encloses 3.52 of the 4 square units it spans; a fan from the centre would have
-    // claimed the whole span and occluded the 0.48 unit notch.
-    expect(capArea(solid)).toBeCloseTo(3.52, 5);
-  });
-
-  it("takes its thickness from the half-depths, so the side view is not the front view", () => {
-    const tapered = buildBody(SQUARE, [0.9, 0.9, 0.15, 0.15, 0.9])!;
-
-    expect(reachAt(tapered, -1, 2)).toBeGreaterThan(0.8);
-    expect(reachAt(tapered, 1, 2)).toBeLessThan(0.2);
-    // The front outline is untouched by any of it: that is the artwork.
-    expect(reachAt(tapered, -1, 0)).toBeCloseTo(1, 6);
-    expect(reachAt(tapered, 1, 0)).toBeCloseTo(1, 6);
-  });
-
-  it("refuses a stroke with no area to give a body", () => {
-    expect(buildPrism([[0, 0], [1, 1], [0, 0]], 1)).toBeNull();
-    expect(buildPrism([[0, 0], [1, 0], [2, 0], [0, 0]], 1)).toBeNull();
-    expect(buildPrism(SQUARE, 0)).toBeNull();
+    // The same observer, asked twice, answers the same; a different one answers differently.
+    expect(drawnEdges(solid, observer)).toEqual(drawnEdges(solid, observer));
+    expect(drawnEdges(solid, [40, 0, 0]).length).not.toBe(drawnEdges(solid, observer).length);
   });
 });
 
-describe("buildLathe", () => {
-  it("turns the outline's own half-width, so a tapered figure tapers from every side", () => {
-    const solid = buildLathe(CONE)!;
+describe("isVertexVisible", () => {
+  const observer: SolidPoint = [0, 0, 40];
 
-    // Wide at the foot and narrow at the head, across the figure and through it alike - which a
-    // straight extrusion could never be.
-    for (const axis of [0, 2] as const) {
-      expect(reachAt(solid, 0.8, axis)).toBeLessThan(reachAt(solid, -0.8, axis) * 0.6);
-      expect(reachAt(solid, -0.8, axis)).toBeGreaterThan(0.6);
+  it("hides a point the body stands in front of and keeps one it does not", () => {
+    const solid = nestedBoxes();
+
+    // Corner of the near box, and the matching corner of the box hidden behind it.
+    expect(isVertexVisible(solid, 4, observer)).toBe(true);
+    expect(isVertexVisible(solid, 12, observer)).toBe(false);
+  });
+});
+
+describe("a sculpted body's outline", () => {
+  const observer: SolidPoint = [0, 0, 40];
+
+  // A small body in front of a much larger one. The small one's edges are places the surface turns
+  // away, so the facing test calls them silhouette - but they are not where the body ends, because
+  // the larger body is behind them. Those are the edges that qualify for a fraction of a degree and
+  // blink as a pilot moves.
+  function nearAndFar(): GlyphSolid {
+    const near = boxAt([0, 0, 6], 0.8, 0);
+    const far = boxAt([0, 0, -2], 3, 8);
+    return buildModelSolid([...near.vertices, ...far.vertices], [...near.triangles, ...far.triangles], [])!;
+  }
+
+  it("draws an unmarked edge only where the body ends, not where it passes in front of itself", () => {
+    const solid = nearAndFar();
+    const lines = drawnEdges(solid, observer);
+
+    expect(lines.length).toBeGreaterThan(0);
+    // Everything drawn belongs to the far body, whose edges are the outline; the near body turns
+    // away too, but with something behind it, so none of its unmarked edges is a line.
+    for (const line of lines) {
+      expect(Math.max(Math.abs(line.from[0]), Math.abs(line.to[0]), Math.abs(line.from[1]), Math.abs(line.to[1]))).toBeCloseTo(3, 5);
     }
   });
 
-  it("reads the same seen from the front and from the side", () => {
-    const solid = buildLathe(CONE)!;
+  it("still draws a marked crease there, which is what keeps the near body readable", () => {
+    const near = boxAt([0, 0, 6], 0.8, 0);
+    const far = boxAt([0, 0, -2], 3, 8);
+    const solid = buildModelSolid([...near.vertices, ...far.vertices], [...near.triangles, ...far.triangles], [[4, 5]])!;
 
-    for (const y of [-0.8, 0, 0.8]) expect(reachAt(solid, y, 2)).toBeCloseTo(reachAt(solid, y, 0), 1);
+    expect(drawnEdges(solid, observer).some((line) => line.from[2] > 5 || line.to[2] > 5)).toBe(true);
   });
 
-  it("is closed at both ends, so nothing shows through the axis", () => {
-    const solid = buildLathe(CONE)!;
+  it("keeps the whole outline of a convex body, which is where it ends everywhere", () => {
+    const box = boxAt([0, 0, 0], 1, 0);
+    const solid = buildModelSolid(box.vertices, box.triangles, [])!;
+    const visibility = classifyEdges(solid, observer);
 
-    for (const edge of solid.edges) expect(edge.faces).toHaveLength(2);
-    expect(solid.edges.filter((edge) => edge.drawn).length).toBeGreaterThan(20);
-  });
-
-  it("refuses an outline with no height to turn", () => {
-    expect(buildLathe([[-1, 0], [1, 0], [0, 0], [-1, 0]])).toBeNull();
+    expect(drawnEdges(solid, observer)).toHaveLength(visibility.filter((seen) => seen === "silhouette").length);
   });
 });
 
 describe("classifyEdges", () => {
-  it("draws a square seen face on: the outline only", () => {
-    expect(tally(buildPrism(SQUARE, 1)!, [0, 0, 40])).toEqual({ silhouette: 4, interior: 0, hidden: 8 });
+  // Marked along the near face, so what the facing test makes of the drawing can be counted.
+  const cube = (marked: [number, number][]): GlyphSolid => buildModelSolid(boxAt([0, 0, 0], 1, 0).vertices, boxAt([0, 0, 0], 1, 0).triangles, marked)!;
+  const NEAR_FACE: [number, number][] = [[4, 5], [5, 7], [7, 6], [6, 4]];
+  const FAR_FACE: [number, number][] = [[0, 1], [1, 3], [3, 2], [2, 0]];
+
+  it("draws a cube seen face on: the near face, whole", () => {
+    expect(tally(cube(NEAR_FACE), [0, 0, 40])).toEqual({ silhouette: 4, interior: 0, hidden: 0 });
   });
 
-  it("draws a cube seen from a corner: six outline edges, three near ones, three lost behind it", () => {
-    expect(tally(buildPrism(SQUARE, 1)!, [40, 40, 40])).toEqual({ silhouette: 6, interior: 3, hidden: 3 });
+  it("keeps the body's own far side off the drawing", () => {
+    expect(tally(cube(FAR_FACE), [0, 0, 40])).toEqual({ silhouette: 0, interior: 0, hidden: 4 });
   });
 
   it("changes what is visible as the observer moves, and nothing else", () => {
-    const solid = buildPrism(SQUARE, 1)!;
+    const solid = cube(NEAR_FACE);
 
     const near = classifyEdges(solid, [40, 40, 40]);
     const far = classifyEdges(solid, [-40, 10, -40]);
@@ -142,32 +178,32 @@ describe("classifyEdges", () => {
     // The whole promise of the body: a pilot who travels sees another side of the same object,
     // never a redrawn one.
     expect(near).not.toEqual(far);
-    expect(buildPrism(SQUARE, 1)!.vertices).toEqual(solid.vertices);
+    expect(cube(NEAR_FACE).vertices).toEqual(solid.vertices);
   });
 
   it("keeps the same edges hidden from anywhere along one line of sight", () => {
-    const solid = buildPrism(SQUARE, 1)!;
+    const solid = cube(NEAR_FACE);
 
     // Camera distance must not enter into it: only the direction the observer lies in does.
     expect(classifyEdges(solid, [40, 40, 40])).toEqual(classifyEdges(solid, [400, 400, 400]));
   });
 
-  it("hides about half a turned body, from any side", () => {
-    const solid = buildLathe(CONE)!;
+  it("hides the far side of a sculpted body seen from along its own plane", () => {
+    const solid = readSigilModel(buildRing())!.solid;
 
-    for (const observer of [[40, 0, 0], [0, 10, 40], [-30, 5, -30]] as SolidPoint[]) {
+    for (const observer of [[40, 0, 0], [-30, 5, -30]] as SolidPoint[]) {
       const counts = tally(solid, observer);
-      const drawn = counts.silhouette + counts.interior;
+
       expect(counts.hidden).toBeGreaterThan(0);
-      expect(drawn).toBeGreaterThan(0);
-      expect(counts.silhouette).toBeGreaterThan(0);
+      expect(counts.silhouette + counts.interior).toBeGreaterThan(0);
     }
   });
 });
 
 describe("mapSolid", () => {
   it("moves positions with the frame and directions without its origin", () => {
-    const solid = buildPrism(SQUARE, 1)!;
+    const box = boxAt([0, 0, 0], 1, 0);
+    const solid = buildModelSolid(box.vertices, box.triangles, [[0, 1], [1, 3], [3, 2], [2, 0]])!;
     const offset: SolidPoint = [1e16, -2e16, 5e15];
 
     const mapped = mapSolid(
@@ -181,21 +217,5 @@ describe("mapSolid", () => {
     // Classification has to survive the move, or a glyph would read differently in absolute space
     // than it did in its own frame.
     expect(classifyEdges(mapped, [offset[0], offset[1], offset[2] + 40])).toEqual(classifyEdges(solid, [0, 0, 40]));
-  });
-});
-
-describe("spanAt", () => {
-  it("bounds the outline at a height, across a bite as well as a solid part", () => {
-    expect(spanAt(SQUARE, 0)).toEqual([-1, 1]);
-    expect(spanAt(CONCAVE, 0.5)).toEqual([-1, 1]);
-    expect(spanAt(SQUARE, 9)).toBeNull();
-  });
-});
-
-describe("isClosedStroke", () => {
-  it("tells an outline that can carry a body from a line that cannot", () => {
-    expect(isClosedStroke(SQUARE)).toBe(true);
-    expect(isClosedStroke([[0, -1], [0, 1]])).toBe(false);
-    expect(isClosedStroke([[-0.4, 0.5], [0, 1], [0.4, 0.5]])).toBe(false);
   });
 });

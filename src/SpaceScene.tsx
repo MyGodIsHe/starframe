@@ -17,12 +17,10 @@ import { FlightTrailLayer } from "./FlightTrailLayer";
 import type { AmbientFlightTrailPoint } from "./ambientFlightTrails";
 import { BattleFlareLayer } from "./BattleFlareLayer";
 import { BattleBeaconOverlay } from "./BattleBeaconOverlay";
+import { dampCameraState, orbitCameraPosition, type CameraState } from "./orbitCamera";
 
-export type CameraState = {
-  azimuth: number;
-  elevation: number;
-  distance: number;
-};
+// Re-exported so the viewport's own camera stays one import for its callers.
+export { dampCameraState, orbitCameraPosition, type CameraState };
 
 export type ZoomBounds = {
   min: number;
@@ -58,7 +56,6 @@ const FARTHEST_OBJECT_MARGIN = 1.65;
 const FALLBACK_MIN_DISTANCE = 6;
 const FALLBACK_MAX_DISTANCE = 18;
 const ZOOM_STEP_RATIO = 1 / 1200;
-const CAMERA_DAMPING = 18;
 const MARKER_SCALE_DIVISOR = 600;
 // Bigger than a planet's markerSize (8) because the beacon glyph's own geometry (torus/cone)
 // covers far less of its bounding sphere than a planet's solid marker dot does.
@@ -675,24 +672,6 @@ function CameraRig({ camera, reducedMotion }: { camera: CameraState; reducedMoti
   });
 
   return null;
-}
-
-export function dampCameraState(current: CameraState, target: CameraState, delta: number): CameraState {
-  const interpolation = 1 - Math.exp(-CAMERA_DAMPING * delta);
-  return {
-    azimuth: current.azimuth + (target.azimuth - current.azimuth) * interpolation,
-    elevation: current.elevation + (target.elevation - current.elevation) * interpolation,
-    distance: current.distance + (target.distance - current.distance) * interpolation,
-  };
-}
-
-export function orbitCameraPosition({ azimuth, elevation, distance }: CameraState, position = new Vector3()): Vector3 {
-  const horizontal = Math.cos(elevation) * distance;
-  return position.set(
-    Math.sin(azimuth) * horizontal,
-    Math.sin(elevation) * distance,
-    Math.cos(azimuth) * horizontal,
-  );
 }
 
 function projectGates(gates: LocalSystemProjection["gates"], celestialMap: ReturnType<typeof projectCelestialMap>): DisplayGate[] {

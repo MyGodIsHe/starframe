@@ -89,7 +89,9 @@ describe("projectConstellationGlyphs", () => {
     expect(shared.nodes.map((node) => node.systemId)).toEqual(
       stationary.find((glyph) => glyph.constellationId === 20)!.nodes.map((node) => node.systemId),
     );
-    expect(shared.strokes.some((stroke) => stroke.kind === "figure")).toBe(true);
+    // Artwork of any kind: a figure whose drawing is all closed outlines carries it as the body's
+    // own edges rather than as lines struck on a cap, and a glyph of nothing but leads is not one.
+    expect(shared.strokes.some((stroke) => stroke.kind !== "lead")).toBe(true);
   });
 });
 

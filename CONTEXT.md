@@ -51,8 +51,8 @@ A Constellation Glyph is shown whole or not at all: opacity belongs to the glyph
 _Avoid_: fading one node, hiding one star behind another, a glyph missing its far side
 
 **Sigil Figure**:
-One piece of authored line art from the shared library - a crown, a wolf, a vessel - with named anchors on its most characteristic extremities, where real Solar Systems are meant to land. A figure has an inherent upright and is only ever tilted slightly within its Glyph Frame, because a crown lying on its side stops being a crown.
-_Avoid_: a shape derived from Solar System positions, a figure generated per Constellation, free rotation within the frame, a silhouette that needs fill or colour to read
+One sculpted body from the shared library - a bolt, an atom, a ring, a wolf, a vessel - with anchors on its most characteristic extremities, where real Solar Systems are meant to land. A figure has an inherent upright and is only ever tilted slightly within its Glyph Frame, because a crown lying on its side stops being a crown. The fit moves the whole body onto the stars - turn, scale, shift - and never reshapes it.
+_Avoid_: a body built out of flat line art by rule, a shape derived from Solar System positions, a figure generated per Constellation, free rotation within the frame, a silhouette that needs fill or colour to read
 
 **Sigil Motif**:
 Which Sigil Figure a Constellation wears, chosen from its real name and Region, together with the caption naming the idea.

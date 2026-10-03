@@ -1,9 +1,9 @@
 // Assigns every Constellation a figure from the library, by its real name and Region.
 //
 // The model is used here for the thing it is reliable at: reading 799 EVE names and picking which
-// figure suits each, plus a caption. It produces no geometry - the artwork comes from
-// scripts/generate-figures.ts and is placed on the real Solar Systems by the fitter. Every answer
-// is checked against the library before it is written.
+// figure suits each, plus a caption. It produces no geometry - a figure is a sculpted model,
+// imported by hand with scripts/import-sigil-model.ts and placed on the real Solar Systems by the
+// fitter. Every answer is checked against the library before it is written.
 //
 // Offline and manual, like scripts/generate-sde.ts. The result is committed, so the running app
 // never calls an API and never needs a key.
@@ -15,7 +15,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SIGIL_FIGURES } from "../src/constellations/sigilMotifs";
+import { SIGIL_MODELS } from "../src/constellations/sigilModel";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outputPath = resolve(here, "../src/data/constellation-motifs.json");
@@ -32,8 +32,8 @@ type RawIndex = {
 type Candidate = { id: number; name: string; region: string };
 type Motif = { figure: string; caption: string };
 
-const FIGURE_NAMES = SIGIL_FIGURES.map((figure) => figure.name);
-if (FIGURE_NAMES.length === 0) throw new Error("the figure library is empty - run scripts/generate-figures.ts first");
+const FIGURE_NAMES = SIGIL_MODELS.map((model) => model.name);
+if (FIGURE_NAMES.length === 0) throw new Error("the figure library is empty - import a model with scripts/import-sigil-model.ts first");
 
 const SYSTEM_PROMPT = `You assign a figure to each constellation of New Eden, the setting of EVE Online.
 
