@@ -7,7 +7,7 @@ deterministic ambient activity.
 
 [Open the live demo](https://mygodishe.github.io/starframe/)
 
-![Starframe showing the Amarr system and celestial map](tests/local-system.spec.ts-snapshots/celestial-map-chromium-win32.png)
+![Starframe showing the Amarr system and celestial map](docs/screenshot-amarr.png)
 
 ## Requirements
 
@@ -101,8 +101,10 @@ npm run test:e2e
 ```
 
 `test:e2e` builds the production application and runs the Playwright suite in
-desktop and mobile Chromium profiles. Install the browser once with
-`npx playwright install chromium` if it is not already available.
+desktop and mobile Chromium profiles, several pages at a time. It asserts on the
+`data-*` attributes the scene publishes about what it drew rather than on
+reference images, so it needs no per-platform snapshots. Install the browser once
+with `npx playwright install chromium` if it is not already available.
 
 ## Static Data Export
 

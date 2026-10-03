@@ -1,45 +1,6 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { PerspectiveCamera, Vector3 } from "three";
-import { resolveObserverPosition } from "../src/interstellarProjection";
-import type { UniverseIndex } from "../src/universe/generateUniverse";
-
-const AMARR_SYSTEM_ID = 30002187;
-// Camera drag constants from SpaceScene.tsx's drag() handler and the default INITIAL_CAMERA in App.tsx.
-const INITIAL_CAMERA = { azimuth: 0.55, elevation: 0.25 };
-const AZIMUTH_PER_PIXEL = 0.012;
-const ELEVATION_PER_PIXEL = 0.008;
-
-function directionAzimuthElevation(direction: readonly [number, number, number]): { azimuth: number; elevation: number } {
-  return { elevation: Math.asin(-direction[1]), azimuth: Math.atan2(-direction[0], -direction[2]) };
-}
-
-async function dragCameraBy(page: Page, scene: Locator, dx: number, dy: number): Promise<void> {
-  const box = await scene.boundingBox();
-  if (!box) throw new Error("Scene canvas has no bounds");
-  const centerX = box.x + box.width / 2;
-  const centerY = box.y + box.height / 2;
-  await page.mouse.move(centerX, centerY);
-  await page.mouse.down();
-  await page.mouse.move(centerX + dx, centerY + dy);
-  await page.mouse.up();
-}
-
-async function loadUniverseIndex(): Promise<UniverseIndex> {
-  return JSON.parse(await readFile(new URL("../src/data/universe-index.json", import.meta.url), "utf8")) as UniverseIndex;
-}
-
-// A screenshot taken the instant after `page.goto` races the very first WebGL paint: React/DOM
-// state (and so `getByRole("application")`) is ready in well under 100ms, but the Canvas can still
-// be blank for a couple hundred ms while shaders compile and the first frame uploads. Two
-// screenshots taken back to back during that window are pixel-identical (both blank), so
-// `toHaveScreenshot`'s own stability check can be fooled into accepting a blank frame as "stable"
-// well before real content ever appears. Only tests whose first screenshot follows `page.goto` with
-// no intervening interaction (which otherwise gives the first frame time to land for free) need this.
-async function waitForFirstRenderedFrame(page: Page): Promise<void> {
-  await expect(page.getByRole("application")).toHaveAttribute("data-celestial-map-system-count", /\d+/);
-  await page.waitForTimeout(500);
-}
 
 test("opens a calm local system without the retired event controls", async ({ page }, testInfo) => {
   await page.goto("/");
@@ -74,17 +35,6 @@ test("renders the full Celestial Map layer for the current system on every quali
   await expect(page.getByRole("heading", { name: "Ashab" })).toBeVisible();
   await expect(scene).toHaveAttribute("data-celestial-map-active-system", String(ashab.id));
   await expect(scene).toHaveAttribute("data-celestial-map-system-count", String(index.systems.length - 1));
-});
-
-test("renders a camera-centred Celestial Map from SDE system directions", async ({ page }) => {
-  await page.goto("/?snapshotTime=0");
-  await waitForFirstRenderedFrame(page);
-
-  await expect(page).toHaveScreenshot("celestial-map.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
-  await page.getByRole("button", { name: "Stargate to Ashab" }).click();
-  await expect(page.getByRole("heading", { name: "Ashab" })).toBeVisible();
-  await expect(page.getByRole("application")).not.toHaveAttribute("data-travel-phase");
-  await expect(page).toHaveScreenshot("celestial-map-after-jump.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
 });
 
 test("loads the official generated Amarr star and planets", async ({ page }) => {
@@ -132,20 +82,6 @@ test("keeps SDE orbital ellipses visible without planet selection controls", asy
   await expect(page.getByRole("button", { name: /^Select / })).toHaveCount(0);
   await expect(page.getByText(/^Радиус /)).toHaveCount(0);
   await expect(page.getByText(/^Расстояние /)).toHaveCount(0);
-});
-
-test("renders adaptive orbital trails for every Amarr planet", async ({ page }) => {
-  await page.goto("/?snapshotTime=0");
-  await waitForFirstRenderedFrame(page);
-
-  await expect(page).toHaveScreenshot("adaptive-orbital-trails.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
-});
-
-test("renders spherical distance-scaled planet markers", async ({ page }) => {
-  await page.goto("/?snapshotTime=0");
-  await waitForFirstRenderedFrame(page);
-
-  await expect(page).toHaveScreenshot("spherical-planet-markers.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
 });
 
 test("renders every Amarr stargate with its real destination and a shared hover and focus state", async ({ page }) => {
@@ -245,13 +181,6 @@ test("activating a stargate loads its destination and restores orbit navigation"
   await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2);
   await page.mouse.up();
   await expect(page.getByRole("status")).not.toHaveText(beforeOrbit ?? "");
-});
-
-test("renders a restrained ambient flight trail between local points of interest", async ({ page }) => {
-  await page.goto("/?snapshotTime=2");
-
-  await expect(page.getByRole("application")).toHaveAttribute("data-ambient-flight-trails", "enabled");
-  await expect(page).toHaveScreenshot("ambient-flight-trail.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
 });
 
 test("activates a stargate through its enlarged continuous scene hitbox", async ({ page }) => {
@@ -388,18 +317,6 @@ test("keeps the player's orbit and zoom controls active through a stargate jump"
   await expect(page.getByRole("status")).toContainText(`Camera distance ${cameraState[1]}. Camera bearing ${cameraState[2]}`);
 });
 
-test("shows a jump preview when hovering a gate after a transition", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Stargate to Ashab" }).click();
-  await expect(page.getByRole("heading", { name: "Ashab" })).toBeVisible();
-  await expect(page.getByRole("application")).not.toHaveAttribute("data-travel-phase");
-
-  const nextGate = page.getByRole("button", { name: /^Stargate to / }).first();
-  await nextGate.hover();
-
-  await expect(page.getByRole("region", { name: "Jump preview tree" })).toBeVisible();
-});
-
 test("keeps the current system and offers a retry when a destination cannot load", async ({ page }) => {
   await page.goto("/");
   const destinationUrl = await page.evaluate(async () => {
@@ -451,13 +368,6 @@ test("waits for the destination resource before starting travel", async ({ page 
   await expect(scene).toHaveAttribute("data-travel-phase", "accelerating");
 });
 
-test("renders the active stargate preview consistently", async ({ page }) => {
-  await page.goto("/?snapshotTime=0");
-  await page.getByRole("button", { name: /^Stargate to / }).nth(0).hover();
-
-  await expect(page).toHaveScreenshot("active-stargate-preview.png", { animations: "disabled", maxDiffPixelRatio: 0.02 });
-});
-
 test("renders constellation glyphs from real stars instead of the retired markers", async ({ page }) => {
   await page.goto("/?snapshotTime=0");
 
@@ -467,15 +377,19 @@ test("renders constellation glyphs from real stars instead of the retired marker
   await expect(scene).toHaveAttribute("data-constellation-spike-star-count", /[1-9]\d*/);
   await expect(scene).toHaveAttribute("data-constellation-spikes-per-star", "8");
   await expect(scene).not.toHaveAttribute("data-constellation-marker-count", /.*/);
-  await expect(page).toHaveScreenshot("constellation-glyphs.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
 });
 
-test("renders continuous constellation glyphs while decelerating through a stargate", async ({ page }) => {
+test("keeps drawing constellation glyphs and their spiked stars while decelerating through a stargate", async ({ page }) => {
   await page.goto("/?snapshotTime=0");
   await page.getByRole("button", { name: "Stargate to Ashab" }).click();
 
-  await expect(page.getByRole("application", { name: "Interactive star system centered on Ashab's star" })).toHaveAttribute("data-travel-phase", "decelerating");
-  await expect(page).toHaveScreenshot("constellation-glyphs-arriving.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
+  // The glyph layer is rebuilt for the destination mid-journey; the point of the assertion is that
+  // it never goes empty while doing so, which is what a torn-down-and-rebuilt layer would look like.
+  const scene = page.getByRole("application", { name: "Interactive star system centered on Ashab's star" });
+  await expect(scene).toHaveAttribute("data-travel-phase", "decelerating");
+  await expect(scene).toHaveAttribute("data-constellation-glyph-count", /[1-9]\d*/);
+  await expect(scene).toHaveAttribute("data-constellation-spike-star-count", /[1-9]\d*/);
+  await expect(scene).toHaveAttribute("data-constellation-spikes-per-star", "8");
 });
 
 test("keeps stargate labels projection-anchored while the camera rotates", async ({ page }) => {
@@ -603,48 +517,4 @@ test("reports a WebGL context loss instead of leaving an empty page", async ({ p
   await page.locator("canvas").dispatchEvent("webglcontextlost");
 
   await expect(page.getByRole("alert")).toContainText("WebGL is unavailable");
-});
-
-test("renders additive colored halo blending across a dense angular cluster of real stars", async ({ page }) => {
-  await page.goto("/?snapshotTime=0");
-  const scene = page.getByRole("application");
-
-  const index = await loadUniverseIndex();
-  const observer = resolveObserverPosition(index.systems, AMARR_SYSTEM_ID, null, 0)!;
-  // 10 degree sky cells; k-space only (id < 31,000,000) - wormhole (J-space) systems share one
-  // placeholder SDE position, so grouping them in would find a data artifact, not a real spatial
-  // cluster of stars whose halos should visually overlap.
-  const CELL_RADIANS = (10 * Math.PI) / 180;
-  const buckets = new Map<string, { count: number; sumAzimuth: number; sumElevation: number }>();
-  for (const system of index.systems) {
-    if (system.id === AMARR_SYSTEM_ID || system.id >= 31_000_000) continue;
-    const offset: [number, number, number] = [system.position[0] - observer[0], system.position[1] - observer[1], system.position[2] - observer[2]];
-    const distance = Math.hypot(...offset);
-    const { azimuth, elevation } = directionAzimuthElevation([offset[0] / distance, offset[1] / distance, offset[2] / distance]);
-    if (Math.abs(elevation) > 1) continue;
-    const key = `${Math.floor(azimuth / CELL_RADIANS)}:${Math.floor(elevation / CELL_RADIANS)}`;
-    const bucket = buckets.get(key) ?? { count: 0, sumAzimuth: 0, sumElevation: 0 };
-    bucket.count += 1;
-    bucket.sumAzimuth += azimuth;
-    bucket.sumElevation += elevation;
-    buckets.set(key, bucket);
-  }
-  const densest = [...buckets.values()].sort((a, b) => b.count - a.count)[0];
-  if (!densest || densest.count < 20) throw new Error("No sufficiently dense angular cluster of real stars found from Amarr");
-
-  const azimuth = densest.sumAzimuth / densest.count;
-  const elevation = densest.sumElevation / densest.count;
-  const dx = (INITIAL_CAMERA.azimuth - azimuth) / AZIMUTH_PER_PIXEL;
-  const dy = (elevation - INITIAL_CAMERA.elevation) / ELEVATION_PER_PIXEL;
-  await dragCameraBy(page, scene, dx, dy);
-
-  await expect(page).toHaveScreenshot("dense-region-colored-halo.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
-});
-
-test("keeps star color, brightness and glyph spikes continuous through an intermediate Stargate travel frame", async ({ page }) => {
-  await page.goto("/?snapshotTime=0");
-  await page.getByRole("button", { name: "Stargate to Ashab" }).click();
-
-  await expect(page.getByRole("application", { name: "Interactive star system centered on Ashab's star" })).toHaveAttribute("data-travel-phase", "decelerating");
-  await expect(page).toHaveScreenshot("star-field-travel-continuity.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
 });

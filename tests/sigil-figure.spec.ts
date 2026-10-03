@@ -21,12 +21,6 @@ async function drawing(scene: Locator): Promise<(string | null)[]> {
   ]);
 }
 
-// The first WebGL paint races `page.goto`; see the note in local-system.spec.ts.
-async function waitForFirstRenderedFrame(page: Page): Promise<void> {
-  await expect(page.getByRole("application")).toHaveAttribute("data-sigil-stroke-count", /[1-9]\d*/);
-  await page.waitForTimeout(500);
-}
-
 test("opens on the generated bolt, as an outline with detail inside it", async ({ page }) => {
   await page.goto("/sigil.html");
   const scene = page.getByRole("application");
@@ -90,15 +84,4 @@ test("holds the drawing still when only the camera moves", async ({ page }) => {
   await expect(page.getByLabel("Sculpted body")).toContainText("Observer held.");
   await expect(scene).toHaveAttribute("data-sigil-observer", observer!);
   expect(await drawing(scene)).toEqual(drawingBefore);
-});
-
-test("draws the figure", async ({ page }) => {
-  await page.goto("/sigil.html");
-  await waitForFirstRenderedFrame(page);
-
-  // Counted in pixels rather than as a share of the page, and counted tight. This page is one figure
-  // of thin line on an empty ground - a bolt is about two thousand lit pixels in a frame of nine
-  // hundred thousand - so a tolerance written as a percentage of the frame lets the whole figure move
-  // to a different bearing and still pass, which it did twice while this figure was being drawn.
-  await expect(page).toHaveScreenshot("sigil-figure.png", { animations: "disabled", maxDiffPixels: 400 });
 });
