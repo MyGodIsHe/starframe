@@ -71,8 +71,8 @@ The deduplicated breadth-first tree of up to three Stargate jumps that begins wi
 _Avoid_: linear route preview, persistent selected route
 
 **Distance Cue**:
-The relative brightness of a Celestial Map star, which decreases with its distance from the active Solar System. Its near/mid/far core-and-halo appearance (a sharper, more compact point up close; a wider, more halo-dominant glow far away) is a presentation of this same brightness value at a fixed physical distance threshold - it never relocates a Solar System on the Celestial Map sphere or renormalizes to the current dataset's nearest or farthest system.
-_Avoid_: physical stellar luminosity, generated background star, physical movement toward or away from the observer, dataset-relative min/max normalization
+The relative brightness of a Celestial Map star, which decreases with its distance from the active Solar System. Its near/mid/far core-and-halo appearance (a sharper, more compact point up close; a wider, more halo-dominant glow far away) is a presentation of this same brightness value at a fixed physical distance threshold - it never relocates a Solar System on the Celestial Map sphere or renormalizes to the current dataset's nearest or farthest system. The whole field, procedural background stars included, is drawn at a fixed fraction of the light it asks for, so the stars of the Constellation a Glyph is drawn on are read as its Glyph Stars rather than lost in the sky behind them; one shared fraction leaves every star's place in the near/far order untouched.
+_Avoid_: physical stellar luminosity, generated background star, physical movement toward or away from the observer, dataset-relative min/max normalization, dimming only the stars outside a visible Glyph
 
 **Minimum Map Brightness**:
 The brightness floor for the most distant Celestial Map stars. It remains higher than the brightness of procedural background stars, so every New Eden Solar System stays distinguishable.

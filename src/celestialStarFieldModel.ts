@@ -41,6 +41,16 @@ const HALO_SIZE_FAR_PX = 26;
 const HALO_WEIGHT_NEAR = 0.45;
 const HALO_WEIGHT_FAR = 1;
 
+// Every Celestial Map star is drawn at four fifths of the brightness its Distance Cue asks for.
+// The sky a Constellation Glyph stands in front of is also the sky its own Glyph Stars have to be
+// read against, and at full strength the field of ordinary stars - thousands of them, each with a
+// halo that sums with its neighbours' - carries enough light to flatten that difference. Dimming
+// the whole field by one factor keeps the Distance Cue's near/far story exactly as it was: every
+// star loses the same fifth, so none of them trades places with another. The procedural background
+// stars are dimmed by this same factor (see DECORATIVE_STAR_MAX_OPACITY in SpaceScene.tsx), so
+// Minimum Map Brightness still reads above them and every real Solar System stays distinguishable.
+export const BACKGROUND_STAR_DIMMING = 0.8;
+
 // A perspective projection spreads a fixed solid angle over screen area proportional to
 // 1 / cos(theta)^3. Scaling a round halo diameter by cos(theta)^-1.5 preserves its coverage and
 // therefore its additive overlap as it moves away from the optical axis. The core remains a
@@ -87,9 +97,9 @@ function clamp(value: number, min: number, max: number): number {
 export function computeStarVisualAttributes(distance: number, intensity: number, quality: StarFieldQualityBudget, out: StarVisualAttributes = { coreSize: 0, coreOpacity: 0, haloSize: 0, haloOpacity: 0 }): StarVisualAttributes {
   const t = distanceMix(distance);
   out.coreSize = lerp(CORE_SIZE_NEAR_PX, CORE_SIZE_FAR_PX, t);
-  out.coreOpacity = intensity * lerp(CORE_WEIGHT_NEAR, CORE_WEIGHT_FAR, t);
+  out.coreOpacity = intensity * lerp(CORE_WEIGHT_NEAR, CORE_WEIGHT_FAR, t) * BACKGROUND_STAR_DIMMING;
   out.haloSize = Math.min(quality.haloMaxSize, lerp(HALO_SIZE_NEAR_PX, HALO_SIZE_FAR_PX, t));
-  out.haloOpacity = intensity * lerp(HALO_WEIGHT_NEAR, HALO_WEIGHT_FAR, t) * quality.haloIntensity;
+  out.haloOpacity = intensity * lerp(HALO_WEIGHT_NEAR, HALO_WEIGHT_FAR, t) * quality.haloIntensity * BACKGROUND_STAR_DIMMING;
   return out;
 }
 

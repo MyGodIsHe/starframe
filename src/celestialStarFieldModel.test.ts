@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BACKGROUND_STAR_DIMMING,
   computePerspectiveHaloScale,
   computeStarVisualAttributes,
   createHaloColorBuffer,
@@ -66,10 +67,19 @@ describe("computeStarVisualAttributes", () => {
     // The dimmest possible real system: at MINIMUM_MAP_BRIGHTNESS with full observer-fade opacity.
     const attributes = computeStarVisualAttributes(FAR_STAR_DISTANCE * 10, MINIMUM_MAP_BRIGHTNESS, DESKTOP_BUDGET);
 
-    // Must stay comfortably clear of the decorative background stars' fixed opacity ceiling (0.4,
-    // see SpaceScene.tsx's DECORATIVE_STAR_MAX_OPACITY) on both budgets.
-    expect(attributes.coreOpacity).toBeGreaterThan(0.4);
-    expect(computeStarVisualAttributes(FAR_STAR_DISTANCE * 10, MINIMUM_MAP_BRIGHTNESS, MOBILE_BUDGET).haloOpacity).toBeGreaterThan(0.4);
+    // Must stay comfortably clear of the decorative background stars' fixed opacity ceiling (see
+    // SpaceScene.tsx's DECORATIVE_STAR_MAX_OPACITY, which takes the same dimming) on both budgets.
+    expect(attributes.coreOpacity).toBeGreaterThan(0.4 * BACKGROUND_STAR_DIMMING);
+    expect(computeStarVisualAttributes(FAR_STAR_DISTANCE * 10, MINIMUM_MAP_BRIGHTNESS, MOBILE_BUDGET).haloOpacity).toBeGreaterThan(0.4 * BACKGROUND_STAR_DIMMING);
+  });
+
+  it("hands a star only its dimmed share of the brightness the Distance Cue asked for", () => {
+    // The brightest a star can be drawn: right next to the observer, at full Distance Cue
+    // brightness. Even there the core keeps a fifth of its light back for the Glyph Stars in front
+    // of it, and the far end of the ramp keeps the same fifth back rather than a different one.
+    expect(computeStarVisualAttributes(0, 1, DESKTOP_BUDGET).coreOpacity).toBeCloseTo(BACKGROUND_STAR_DIMMING);
+    expect(computeStarVisualAttributes(FAR_STAR_DISTANCE * 10, 1, DESKTOP_BUDGET).coreOpacity).toBeCloseTo(0.55 * BACKGROUND_STAR_DIMMING);
+    expect(computeStarVisualAttributes(FAR_STAR_DISTANCE * 10, 1, DESKTOP_BUDGET).haloOpacity).toBeCloseTo(DESKTOP_BUDGET.haloIntensity * BACKGROUND_STAR_DIMMING);
   });
 
   it("reuses a scratch object across calls without leaking state between systems", () => {

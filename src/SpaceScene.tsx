@@ -4,6 +4,7 @@ import { AdditiveBlending, BufferAttribute, type BufferGeometry, type Group, typ
 import { LOCAL_SYSTEM_SCENE_UNITS_PER_METER, projectLocalSystem, type LocalSystemProjection } from "./localSystemProjection";
 import { calculateOrbitTrail, type OrbitTrailPlanet } from "./orbitTrails";
 import { CelestialStarField } from "./CelestialStarField";
+import { BACKGROUND_STAR_DIMMING } from "./celestialStarFieldModel";
 import { SkyBackground } from "./SkyBackground";
 import { ConstellationGlyphs } from "./constellations/ConstellationGlyphs";
 import { compileConstellationGlyphIndex, projectTravelConstellationGlyphs } from "./constellations/constellationGlyphModel";
@@ -65,8 +66,10 @@ const GATE_MARKER_SIZE = 20;
 const GATE_MARKER_OUTER_RADIUS = 0.375;
 const PLANET_MARKER_BASE_OPACITY = 0.8;
 // Decorative background stars must always read as dimmer than Minimum Map Brightness so every real
-// Solar System stays distinguishable from procedural fill (see interstellarProjection.ts).
-export const DECORATIVE_STAR_MAX_OPACITY = 0.4;
+// Solar System stays distinguishable from procedural fill (see interstellarProjection.ts). They take
+// the same fifth off as the Celestial Map's own stars, so the whole sky behind a Constellation Glyph
+// dims together and that margin is preserved rather than quietly narrowed.
+export const DECORATIVE_STAR_MAX_OPACITY = 0.4 * BACKGROUND_STAR_DIMMING;
 // Fixed screen-pixel sizes baked into each decorative star at creation time (see
 // createDecorativeStarField below) - must be initialized before DECORATIVE_STARS calls that
 // function at module load time.
