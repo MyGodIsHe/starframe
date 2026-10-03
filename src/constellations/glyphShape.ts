@@ -22,7 +22,7 @@ import type { SigilModel } from "./sigilModel";
 // faces the way its constellation does and keeps the galactic sense of up.
 
 /** A tie from a real Solar System to the drawing, in absolute SDE positions. */
-export type GlyphLead = { from: Vector3; to: Vector3 };
+export type GlyphLead = { systemId: number; from: Vector3; to: Vector3 };
 
 export type GlyphShape = {
   /**
@@ -108,12 +108,12 @@ export function buildGlyphShape(input: readonly ShapeSystem[], model: SigilModel
   };
 
   const chartVertices = model.solid.vertices.map(toChart);
-  const leads = stars.flatMap((star): GlyphLead[] => {
+  const leads = stars.flatMap((star, index): GlyphLead[] => {
     const nearest = nearestOnBody([star.x, star.y], model.solid, chartVertices);
     if (!nearest || Math.hypot(nearest[0] - star.x, nearest[1] - star.y) <= LEAD_THRESHOLD) return [];
-    // The Solar Systems lie in the constellation's plane, so a tie stays in it rather than climbing
-    // the body to wherever its surface happens to be.
-    return [{ from: toAbsolute([star.x, star.y, 0]) as Vector3, to: toAbsolute([nearest[0], nearest[1], 0]) as Vector3 }];
+    // The tie starts at the real system, including its distance from the constellation's best-fit
+    // plane, then meets the nearest point of the drawing in that plane.
+    return [{ systemId: star.systemId, from: systems[index].position, to: toAbsolute([nearest[0], nearest[1], 0]) as Vector3 }];
   });
 
   return {

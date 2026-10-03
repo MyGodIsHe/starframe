@@ -111,6 +111,16 @@ describe("buildGlyphShape", () => {
     }
   });
 
+  it("starts every tie at the real three-dimensional Solar System", () => {
+    const shape = buildGlyphShape(DEEP, FIGURE)!;
+
+    expect(shape.leads.length).toBeGreaterThan(0);
+    for (const lead of shape.leads) {
+      const system = DEEP.find((entry) => entry.id === lead.systemId)!;
+      expect(lead.from).toEqual(system.position);
+    }
+  });
+
   it("never lets one far-flung system spike the artwork into a needle", () => {
     const spiked = [...FLAT.slice(0, 4), { id: 5, position: [-3e15, -7e15, 9e16] as Vector3 }];
     const shape = buildGlyphShape(spiked, FIGURE)!;

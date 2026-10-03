@@ -54,6 +54,10 @@ export type ConstellationGlyphStroke = {
   to: Vector3;
   opacity: number;
   proximity: number;
+  /** False where this segment joins the previous part of the same projected stroke. */
+  capStart?: boolean;
+  /** False where this segment joins the next part of the same projected stroke. */
+  capEnd?: boolean;
 };
 
 export type ConstellationGlyph = {
@@ -194,6 +198,8 @@ function projectShape(
         to: onCelestialSphere(end, observerPosition),
         opacity,
         proximity: (sampleProximity(samples, start) + sampleProximity(samples, end)) / 2,
+        capStart: step === 0,
+        capEnd: step === segments - 1,
       });
     }
   };

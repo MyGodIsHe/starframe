@@ -55,6 +55,16 @@ describe("projectConstellationGlyphs", () => {
     expect(glyph.nodes.find((node) => node.systemId === 1)?.opacity).toBe(0);
   });
 
+  it("marks only the real ends of a segmented stroke for rounded glow caps", () => {
+    const index = compileConstellationGlyphIndex(UNIVERSE_SYSTEMS);
+    const strokes = projectConstellationGlyphs(index, UNIVERSE_SYSTEMS[0].id)
+      .flatMap((glyph) => glyph.strokes) as Array<{ capStart?: boolean; capEnd?: boolean }>;
+
+    expect(strokes.some((stroke) => stroke.capStart === false)).toBe(true);
+    expect(strokes.some((stroke) => stroke.capEnd === false)).toBe(true);
+    expect(strokes.some((stroke) => stroke.capStart === true && stroke.capEnd === true)).toBe(true);
+  });
+
   it("keeps topology continuous through travel while blending origin and destination contexts", () => {
     // Origin and destination are 1.2e17 apart - further than NEARBY_CONSTELLATION_RADIUS (1e17), so
     // their own home constellations are each only in range of one side of the trip; constellation 20

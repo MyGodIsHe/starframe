@@ -23,21 +23,32 @@ export const GLYPH_BUCKET_BY_KIND: Record<GlyphStrokeKind, number> = { interior:
 export const GLYPH_STROKE_FLOOR: Record<GlyphStrokeKind, number> = { silhouette: 0.62, interior: 0.42, lead: 0.26 };
 export const GLYPH_STROKE_DEPTH_GAIN: Record<GlyphStrokeKind, number> = { silhouette: 0.38, interior: 0.4, lead: 0.3 };
 
-export type GlyphBucketStyle = { coreWidth: number; haloWidth: number; coreOpacity: number; haloOpacity: number };
+export type GlyphBucketStyle = {
+  coreWidth: number;
+  haloWidth: number;
+  outerWidth: number;
+  coreOpacity: number;
+  haloOpacity: number;
+  outerOpacity: number;
+};
 
 // The outline carries the glow, so the halo climbs with the ladder instead of standing in for
 // distance.
-const CORE_OPACITIES = [0.68, 0.9, 0.34];
-const HALO_OPACITIES = [0.14, 0.22, 0.05];
+const CORE_OPACITIES = [0.76, 0.96, 0.34];
+const HALO_OPACITIES = [0.55, 0.75, 0.09];
+const OUTER_OPACITIES = [0.24, 0.34, 0.025];
 
 export function glyphBucketStyles(profile: RenderQuality["name"]): GlyphBucketStyle[] {
   const coreWidths = profile === "mobile" ? [0.8, 1.15, 0.42] : [1.05, 1.5, 0.55];
-  const haloWidths = profile === "mobile" ? [2.3, 2.7, 1.2] : [3, 3.5, 1.6];
+  const haloWidths = profile === "mobile" ? [3.4, 4.5, 1.2] : [4.5, 6, 1.8];
+  const outerWidths = profile === "mobile" ? [8.5, 11, 2.8] : [12, 16, 4];
   return Array.from({ length: GLYPH_BUCKET_COUNT }, (_, bucket) => ({
     coreWidth: coreWidths[bucket],
     haloWidth: haloWidths[bucket],
+    outerWidth: outerWidths[bucket],
     coreOpacity: CORE_OPACITIES[bucket],
     haloOpacity: HALO_OPACITIES[bucket],
+    outerOpacity: OUTER_OPACITIES[bucket],
   }));
 }
 

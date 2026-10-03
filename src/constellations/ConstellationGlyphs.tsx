@@ -15,11 +15,15 @@ import {
 
 type GlyphLineBucket = {
   geometry: LineSegmentsGeometry;
-  objects: readonly [LineSegments2, LineSegments2];
+  objects: readonly [LineSegments2, LineSegments2, LineSegments2];
+  outerOpacity: number;
+  haloOpacity: number;
   positions: Float32Array;
   colors: Float32Array;
   opacityStart: InstancedBufferAttribute;
   opacityEnd: InstancedBufferAttribute;
+  capStart: InstancedBufferAttribute;
+  capEnd: InstancedBufferAttribute;
 };
 
 type GlyphNodes = {
@@ -82,13 +86,16 @@ export function ConstellationGlyphs({ index, activeSystemId, travel, glyphs, qua
     if (renderState) syncGlyphRenderData(glyphs, renderState, quality.name);
   }, [glyphs, quality.name, renderState]);
 
-  useFrame(() => {
-    if (!travel || !renderState) return;
-    syncGlyphRenderData(
-      projectTravelConstellationGlyphs(index, activeSystemId, travel, performance.now()),
-      renderState,
-      quality.name,
-    );
+  useFrame(({ clock }) => {
+    if (!renderState) return;
+    updateGlowBreathing(renderState, clock.elapsedTime);
+    if (travel) {
+      syncGlyphRenderData(
+        projectTravelConstellationGlyphs(index, activeSystemId, travel, performance.now()),
+        renderState,
+        quality.name,
+      );
+    }
   });
 
   if (!renderState) return null;
@@ -118,15 +125,17 @@ function createRenderState(profile: RenderQuality["name"], glyphs: readonly Cons
 function createLineBuckets(profile: RenderQuality["name"], capacity: number): GlyphLineBucket[] {
   return glyphBucketStyles(profile).map((style, bucket) => createLineBucket(
     capacity,
+    style.outerWidth,
     style.haloWidth,
     style.coreWidth,
+    style.outerOpacity,
     style.haloOpacity,
     style.coreOpacity,
-    -30 + bucket * 2,
+    -30 + bucket * 3,
   ));
 }
 
-function createLineBucket(capacity: number, haloWidth: number, coreWidth: number, haloOpacity: number, coreOpacity: number, renderOrder: number): GlyphLineBucket {
+function createLineBucket(capacity: number, outerWidth: number, haloWidth: number, coreWidth: number, outerOpacity: number, haloOpacity: number, coreOpacity: number, renderOrder: number): GlyphLineBucket {
   const geometry = new LineSegmentsGeometry();
   const positions = new Float32Array(capacity * 6);
   const colors = new Float32Array(capacity * 6);
@@ -136,16 +145,21 @@ function createLineBucket(capacity: number, haloWidth: number, coreWidth: number
   interleavedData(geometry, "instanceColorStart").setUsage(DynamicDrawUsage);
   const opacityStart = new InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(DynamicDrawUsage);
   const opacityEnd = new InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(DynamicDrawUsage);
+  const capStart = new InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(DynamicDrawUsage);
+  const capEnd = new InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(DynamicDrawUsage);
   geometry.setAttribute("instanceOpacityStart", opacityStart);
   geometry.setAttribute("instanceOpacityEnd", opacityEnd);
+  geometry.setAttribute("instanceCapStart", capStart);
+  geometry.setAttribute("instanceCapEnd", capEnd);
   geometry.instanceCount = 0;
 
-  const halo = createLineObject(geometry, haloWidth, haloOpacity, AdditiveBlending, renderOrder);
-  const core = createLineObject(geometry, coreWidth, coreOpacity, NormalBlending, renderOrder + 1);
-  return { geometry, objects: [halo, core], positions, colors, opacityStart, opacityEnd };
+  const outer = createLineObject(geometry, outerWidth, outerOpacity, AdditiveBlending, renderOrder, 1.2, 0);
+  const halo = createLineObject(geometry, haloWidth, haloOpacity, AdditiveBlending, renderOrder + 1, 1.5, 0.04);
+  const core = createLineObject(geometry, coreWidth, coreOpacity, NormalBlending, renderOrder + 2, null, 0.58);
+  return { geometry, objects: [outer, halo, core], outerOpacity, haloOpacity, positions, colors, opacityStart, opacityEnd, capStart, capEnd };
 }
 
-function createLineObject(geometry: LineSegmentsGeometry, linewidth: number, opacity: number, blending: typeof AdditiveBlending | typeof NormalBlending, renderOrder: number): LineSegments2 {
+function createLineObject(geometry: LineSegmentsGeometry, linewidth: number, opacity: number, blending: typeof AdditiveBlending | typeof NormalBlending, renderOrder: number, glowFalloff: number | null, whiten: number): LineSegments2 {
   const material = new LineMaterial({
     blending,
     color: 0xffffff,
@@ -157,22 +171,34 @@ function createLineObject(geometry: LineSegmentsGeometry, linewidth: number, opa
     vertexColors: true,
   });
   material.toneMapped = false;
-  addVertexOpacity(material);
+  addNeonProfile(material, glowFalloff, whiten);
   const object = new LineSegments2(geometry, material);
   object.frustumCulled = false;
   object.renderOrder = renderOrder;
   return object;
 }
 
-function addVertexOpacity(material: LineMaterial): void {
+function addNeonProfile(material: LineMaterial, glowFalloff: number | null, whiten: number): void {
+  const profile = glowFalloff === null ? "" : `
+            float glyphDistance = length(vec2(vUv.x, glyphCapDistance));
+            alpha *= pow(max(0.0, 1.0 - glyphDistance), ${glowFalloff.toFixed(1)});`;
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
-      .replace("attribute vec3 instanceEnd;", "attribute vec3 instanceEnd;\nattribute float instanceOpacityStart;\nattribute float instanceOpacityEnd;\nvarying float vGlyphOpacity;")
-      .replace("void main() {\n\n\t\t\t#ifdef USE_COLOR", "void main() {\n\n\t\t\tvGlyphOpacity = ( position.y < 0.5 ) ? instanceOpacityStart : instanceOpacityEnd;\n\n\t\t\t#ifdef USE_COLOR");
+      .replace("attribute vec3 instanceEnd;", "attribute vec3 instanceEnd;\nattribute float instanceOpacityStart;\nattribute float instanceOpacityEnd;\nattribute float instanceCapStart;\nattribute float instanceCapEnd;\nvarying float vGlyphOpacity;\nvarying vec2 vGlyphCaps;")
+      .replace("void main() {\n\n\t\t\t#ifdef USE_COLOR", "void main() {\n\n\t\t\tvGlyphOpacity = ( position.y < 0.5 ) ? instanceOpacityStart : instanceOpacityEnd;\n\t\t\tvGlyphCaps = vec2(instanceCapStart, instanceCapEnd);\n\n\t\t\t#ifdef USE_COLOR");
     shader.fragmentShader = shader.fragmentShader
-      .replace("void main() {\n\n\t\t\tfloat alpha = opacity;", "varying float vGlyphOpacity;\n\n\t\tvoid main() {\n\n\t\t\tfloat alpha = opacity * vGlyphOpacity;");
+      .replace("void main() {\n\n\t\t\tfloat alpha = opacity;", "varying float vGlyphOpacity;\nvarying vec2 vGlyphCaps;\n\n\t\tvoid main() {\n\n\t\t\tfloat alpha = opacity;")
+      .replace("\t\t\tgl_FragColor = vec4( diffuseColor.rgb, alpha );", `            if (vUv.y < -1.0 && vGlyphCaps.x < 0.5) discard;\n            if (vUv.y > 1.0 && vGlyphCaps.y < 0.5) discard;\n            float glyphCapDistance = max(abs(vUv.y) - 1.0, 0.0);${profile}\n            alpha *= vGlyphOpacity;\n            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), ${whiten.toFixed(2)});\n\t\t\tgl_FragColor = vec4( diffuseColor.rgb, alpha );`);
   };
-  material.customProgramCacheKey = () => "constellation-glyph-vertex-opacity-v1";
+  material.customProgramCacheKey = () => `constellation-glyph-neon-v2-${glowFalloff ?? "core"}-${whiten}`;
+}
+
+function updateGlowBreathing(state: GlyphRenderState, elapsedSeconds: number): void {
+  const pulse = Math.sin(elapsedSeconds * Math.PI * 2 / 5);
+  for (const bucket of state.buckets) {
+    bucket.objects[0].material.opacity = bucket.outerOpacity * (1 + pulse * 0.08);
+    bucket.objects[1].material.opacity = bucket.haloOpacity * (1 + pulse * 0.05);
+  }
 }
 
 function createNodePoints(capacity: number): GlyphNodes {
@@ -222,6 +248,8 @@ function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: Glyph
       const intensity = glyphStrokeIntensity(stroke.kind, stroke.opacity, stroke.proximity);
       bucket.opacityStart.setX(strokeIndex, intensity);
       bucket.opacityEnd.setX(strokeIndex, intensity);
+      bucket.capStart.setX(strokeIndex, stroke.capStart === false ? 0 : 1);
+      bucket.capEnd.setX(strokeIndex, stroke.capEnd === false ? 0 : 1);
       strokeCounts[bucketIndex] += 1;
     }
 
@@ -243,6 +271,8 @@ function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: Glyph
     interleavedData(bucket.geometry, "instanceColorStart").needsUpdate = true;
     bucket.opacityStart.needsUpdate = true;
     bucket.opacityEnd.needsUpdate = true;
+    bucket.capStart.needsUpdate = true;
+    bucket.capEnd.needsUpdate = true;
   }
 
   state.nodes.object.geometry.setDrawRange(0, nodeCount);
@@ -276,8 +306,12 @@ function resizeLineBucket(bucket: GlyphLineBucket, capacity: number): void {
   interleavedData(bucket.geometry, "instanceColorStart").setUsage(DynamicDrawUsage);
   bucket.opacityStart = new InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(DynamicDrawUsage);
   bucket.opacityEnd = new InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(DynamicDrawUsage);
+  bucket.capStart = new InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(DynamicDrawUsage);
+  bucket.capEnd = new InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(DynamicDrawUsage);
   bucket.geometry.setAttribute("instanceOpacityStart", bucket.opacityStart);
   bucket.geometry.setAttribute("instanceOpacityEnd", bucket.opacityEnd);
+  bucket.geometry.setAttribute("instanceCapStart", bucket.capStart);
+  bucket.geometry.setAttribute("instanceCapEnd", bucket.capEnd);
 }
 
 function resizeNodes(nodes: GlyphNodes, capacity: number): void {
