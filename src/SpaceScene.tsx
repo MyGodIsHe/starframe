@@ -7,7 +7,7 @@ import { CelestialStarField } from "./CelestialStarField";
 import { SkyBackground } from "./SkyBackground";
 import { ConstellationGlyphs } from "./constellations/ConstellationGlyphs";
 import { compileConstellationGlyphIndex, projectTravelConstellationGlyphs } from "./constellations/constellationGlyphModel";
-import { GLYPH_STAR_SPIKE_COUNT } from "./constellations/glyphStarSpikes";
+import { GLYPH_STAR_SPIKE_COUNT, glyphStarDiameter } from "./constellations/glyphStarSpikes";
 import type { SystemResource, UniverseIndex } from "./universe/generateUniverse";
 import type { RenderQuality } from "./renderQuality";
 import { projectCelestialMap } from "./celestialMap";
@@ -185,6 +185,7 @@ export function SceneViewport({ camera, onCameraChange, star, planets, gates, ac
            data-constellation-glyph-ids={constellationGlyphs.map((glyph) => glyph.constellationId).join(",")}
            data-constellation-spike-star-count={constellationGlyphs.reduce((total, glyph) => total + glyph.nodes.filter((node) => node.opacity > 0.001).length, 0)}
            data-constellation-spikes-per-star={GLYPH_STAR_SPIKE_COUNT}
+           data-constellation-star-diameters={glyphStarDiameterRange(constellationGlyphs, quality.name)}
           data-celestial-preview-arc-count={previewEdges.length}
       data-jump-preview-system-ids={previewSystems.map((system) => system.id).join(",") || undefined}
          data-jump-preview-edges={previewEdges.map((edge) => edge.join(":" )).join(",") || undefined}
@@ -808,6 +809,14 @@ function BackgroundStars({ field }: { field: DecorativeStarField }): ReactNode {
       </points>
     </group>
   );
+}
+
+// The narrowest and widest Glyph Star in the sky, in CSS pixels, so that a star growing as the
+// observer comes closer is something a test can read rather than a difference between two
+// screenshots. A sky holding one glyph at one distance legitimately reports the same twice.
+function glyphStarDiameterRange(glyphs: ReturnType<typeof projectTravelConstellationGlyphs>, profile: RenderQuality["name"]): string {
+  const diameters = glyphs.flatMap((glyph) => glyph.nodes.filter((node) => node.opacity > 0.001).map((node) => glyphStarDiameter(node.distance, profile)));
+  return diameters.length === 0 ? "" : `${Math.min(...diameters).toFixed(1)}:${Math.max(...diameters).toFixed(1)}`;
 }
 
 function CelestialMap({ systems, activeSystemId, travel, constellationGlyphIndex, constellationGlyphs, previewEdges, previewLeaving, quality, reducedMotion, snapshotTime }: { systems: UniverseIndex["systems"]; activeSystemId: number; travel: TravelFrame | null; constellationGlyphIndex: ReturnType<typeof compileConstellationGlyphIndex>; constellationGlyphs: ReturnType<typeof projectTravelConstellationGlyphs>; previewEdges: [number, number][]; previewLeaving: boolean; quality: RenderQuality; reducedMotion: boolean; snapshotTime: number | null }): ReactNode {

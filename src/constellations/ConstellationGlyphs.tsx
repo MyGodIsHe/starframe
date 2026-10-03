@@ -10,9 +10,16 @@ import { glyphBucketStyles, glyphStrokeIntensity, writeGlyphColor, GLYPH_BUCKET_
 import { TRAVEL_DURATION, type TravelFrame } from "../travelCoordinates";
 import { assignGlyphColors } from "./glyphColoring";
 import {
+  GLYPH_STAR_BODY_WHITENING,
+  GLYPH_STAR_CHROMATIC_SPREAD,
+  GLYPH_STAR_CORE_WHITENING,
+  GLYPH_STAR_DEEPEN_FADE,
   GLYPH_STAR_SPIKE_REACH_MAX,
   GLYPH_STAR_SPIKE_REACH_MIN,
+  GLYPH_STAR_TIP_SATURATION,
   GLYPH_STAR_TWINKLE_PERIOD_SECONDS,
+  GLYPH_STAR_WHITE_FADE,
+  glyphStarDiameter,
   glyphStarSpikePhase,
 } from "./glyphStarSpikes";
 import {
@@ -52,6 +59,7 @@ type GlyphRenderState = {
 };
 
 const SPIKE_VERTEX_SHADER = `
+  uniform float uTime;
   uniform vec2 uViewport;
   uniform float uPixelRatio;
   attribute vec3 instancePosition;
@@ -62,14 +70,21 @@ const SPIKE_VERTEX_SHADER = `
   varying vec2 vUv;
   varying vec3 vColor;
   varying float vOpacity;
-  varying float vTwinklePhase;
+  varying float vSwap;
+  varying vec2 vAxisBias;
   varying float vUnitsPerPixel;
+
+  const float TWINKLE_SPEED = ${(Math.PI * 2 / GLYPH_STAR_TWINKLE_PERIOD_SECONDS).toFixed(8)};
 
   void main() {
     vUv = uv;
     vColor = instanceColor;
     vOpacity = instanceOpacity;
-    vTwinklePhase = twinklePhase;
+    // Where the twinkle stands this frame, and which pair of optical axes this star leans on. Both
+    // are one value per star rather than per pixel, so they are settled here instead of under every
+    // one of the thousands of fragments a star covers.
+    vSwap = sin(uTime * TWINKLE_SPEED + twinklePhase);
+    vAxisBias = vec2(cos(twinklePhase), sin(twinklePhase));
     // The fragment shader measures everything in a [-1,1] square spanning the whole billboard, so
     // this is how much of that square a single device pixel covers - the spacing it reads the flare
     // at, several times per pixel. instanceSize is a CSS-pixel width, matching uViewport below.
@@ -84,17 +99,28 @@ const SPIKE_VERTEX_SHADER = `
 // eight rays; a radius-dependent Gaussian width makes every ray broad at the white centre and taper
 // into a blurred point. All math is evaluated on a billboard quad, avoiding POINTS raster snapping
 // while the camera moves.
+//
+// Light is gathered into bands first and given a colour only afterwards, because a flare has a
+// temperature across it rather than one fill: the core burns white, the body of an arm carries the
+// Glyph colour, and the far half of the arm deepens into it with the channels spread slightly apart.
+// The bands also hold three widths of blur, so an arm has a bright thread, a soft shoulder and a
+// wide haze around it instead of one hard Gaussian edge.
 const SPIKE_FRAGMENT_SHADER = `
-  uniform float uTime;
   varying vec2 vUv;
   varying vec3 vColor;
   varying float vOpacity;
-  varying float vTwinklePhase;
+  varying float vSwap;
+  varying vec2 vAxisBias;
   varying float vUnitsPerPixel;
 
-  const float TWINKLE_SPEED = ${(Math.PI * 2 / GLYPH_STAR_TWINKLE_PERIOD_SECONDS).toFixed(8)};
   const float REACH_MIN = ${GLYPH_STAR_SPIKE_REACH_MIN.toFixed(3)};
   const float REACH_MAX = ${GLYPH_STAR_SPIKE_REACH_MAX.toFixed(3)};
+  const float CORE_WHITENING = ${GLYPH_STAR_CORE_WHITENING.toFixed(3)};
+  const float BODY_WHITENING = ${GLYPH_STAR_BODY_WHITENING.toFixed(3)};
+  const float TIP_SATURATION = ${GLYPH_STAR_TIP_SATURATION.toFixed(3)};
+  const float CHROMATIC_SPREAD = ${GLYPH_STAR_CHROMATIC_SPREAD.toFixed(3)};
+  const vec2 WHITE_FADE = vec2(${GLYPH_STAR_WHITE_FADE[0].toFixed(3)}, ${GLYPH_STAR_WHITE_FADE[1].toFixed(3)});
+  const vec2 DEEPEN_FADE = vec2(${GLYPH_STAR_DEEPEN_FADE[0].toFixed(3)}, ${GLYPH_STAR_DEEPEN_FADE[1].toFixed(3)});
 
   float gaussian(float distanceToAxis, float width) {
     float ratio = distanceToAxis / width;
@@ -105,9 +131,11 @@ const SPIKE_FRAGMENT_SHADER = `
     return exp(-distance * distance);
   }
 
-  // One reading of the flare at one point of the billboard. Returns the coloured light and the white
-  // light separately, because how white a pixel burns is decided from their ratio.
-  vec2 flareAt(vec2 point, float swap) {
+  // One reading of the flare at one point of the billboard. x is the soft haze around the arms, y
+  // all the light there is, z the white-hot core on its own, and w that light weighted by how far
+  // out an arm it sits - which is how main() recovers one reach for a pixel the blur has mixed
+  // several into.
+  vec4 flareAt(vec2 point, float swap) {
     float radius = length(point);
     // Eight arms are the fourth harmonic of the angle, and doubling a unit direction twice gives
     // cos/sin of four times that angle outright. Every pixel of every star pays for this four times
@@ -127,41 +155,74 @@ const SPIKE_FRAGMENT_SHADER = `
     float taper = mix(0.16, 0.014, smoothstep(0.0, 1.0, along));
     float petal = gaussian(axisDistance, taper) * decay(along * 1.15);
     float softPetal = gaussian(axisDistance, taper * 2.15) * decay(along * 1.34);
+    float hazePetal = gaussian(axisDistance, taper * 4.6) * decay(along * 1.62);
     float ridge = gaussian(axisDistance, max(taper * 0.34, 0.004)) * exp(-along * 2.1);
     float tipFade = 1.0 - smoothstep(0.78, 1.04, along);
 
     float core = exp(-radius * radius * 34.0) * 1.55 + exp(-radius * radius * 120.0) * 1.3;
     float roundBloom = exp(-radius * radius * 9.0) * 0.34;
+    // The haze no lens ever leaves out: light scattered so wide that no arm is left in it. It is
+    // what keeps a star from ending at the edge of its rays, and it is almost all colour.
+    float wideBloom = exp(-radius * radius * 2.8) * 0.13;
     // Reaching arms brighten and retreating ones dim, which is most of what reads as a twinkle; the
     // gain averages to 1 over a cycle and fades out near the centre, where the eight angular sectors
-    // meet and a per-arm gain would otherwise band the core into a pinwheel.
-    float rayGain = mix(1.0, 0.78 + stretch * 0.44, smoothstep(0.02, 0.2, radius));
-    return vec2(
-      (softPetal * 0.58 * rayGain + roundBloom * 0.44) * tipFade,
-      (petal * 0.92 + ridge * 0.22) * rayGain * tipFade + core
-    );
+    // meet and a per-arm gain would otherwise band the core into a pinwheel. The star's own phase
+    // also leans the gain onto one pair of axes for good, because a real flare is never symmetric.
+    float rayGain = mix(1.0, 0.78 + stretch * 0.44, smoothstep(0.02, 0.2, radius))
+      * (1.0 + 0.13 * dot(doubled, vAxisBias));
+    float haze = (softPetal * 0.5 + hazePetal * 0.26) * rayGain * tipFade + roundBloom * 0.44 + wideBloom;
+    float ray = (petal * 0.92 + ridge * 0.22) * rayGain * tipFade + core;
+    return vec4(haze, ray, core, (haze + ray) * along);
+  }
+
+  vec3 whitened(vec3 hue, float amount) {
+    return hue + (1.0 - hue) * amount;
+  }
+
+  vec3 deepened(vec3 hue) {
+    return clamp(hue * hue * TIP_SATURATION, 0.0, 1.0);
+  }
+
+  // The colour an arm carries this far along its length. Optics spread a flare colour out along its
+  // arms, so the red channel runs the ramp a little ahead of the green and the blue a little behind
+  // it. glyphStarSpikes.glyphStarRayTint mirrors this ramp for tests.
+  vec3 rayTint(vec3 hue, float along) {
+    vec3 ramp = clamp(along * (1.0 + vec3(1.0, 0.0, -1.0) * CHROMATIC_SPREAD), 0.0, 1.0);
+    vec3 near = mix(whitened(hue, CORE_WHITENING), whitened(hue, BODY_WHITENING), smoothstep(WHITE_FADE.x, WHITE_FADE.y, ramp));
+    return mix(near, deepened(hue), smoothstep(DEEPEN_FADE.x, DEEPEN_FADE.y, ramp));
+  }
+
+  // A wide, nearly flat band of light crosses many pixels with less than one framebuffer level
+  // between them, which shows up as rings. A fraction of a level of noise, fixed to the pixel grid,
+  // turns that step into grain the eye reads as smooth light.
+  float dither(vec2 fragment) {
+    return fract(sin(dot(fragment, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
   }
 
   void main() {
     vec2 centered = (vUv - vec2(0.5)) * 2.0;
     if (length(centered) >= 0.995) discard;
-    float swap = sin(uTime * TWINKLE_SPEED + vTwinklePhase);
     // An arm is a Gaussian a fraction of a pixel wide at its tip, so reading it once per pixel means
     // reading a different slice of it every frame: that is what made the rays stutter while the
     // camera turned. Four readings on a rotated grid inside the pixel cover the arm's width however
     // it happens to fall between pixel centres, and their average stays put as the star drifts.
     vec2 subPixel = vec2(vUnitsPerPixel * 0.25);
-    vec2 light = flareAt(centered + subPixel * vec2(0.5, 1.5), swap)
-      + flareAt(centered + subPixel * vec2(1.5, -0.5), swap)
-      + flareAt(centered + subPixel * vec2(-0.5, -1.5), swap)
-      + flareAt(centered + subPixel * vec2(-1.5, 0.5), swap);
+    vec4 light = flareAt(centered + subPixel * vec2(0.5, 1.5), vSwap)
+      + flareAt(centered + subPixel * vec2(1.5, -0.5), vSwap)
+      + flareAt(centered + subPixel * vec2(-0.5, -1.5), vSwap)
+      + flareAt(centered + subPixel * vec2(-1.5, 0.5), vSwap);
     light *= 0.25;
 
-    float intensity = (light.x + light.y) * vOpacity * 1.32;
+    float energy = light.x + light.y;
+    float intensity = energy * vOpacity * 1.46 + dither(gl_FragCoord.xy) * 0.004;
     if (intensity <= 0.002) discard;
-    float whiteMix = clamp(light.y / max(light.x + light.y, 0.001), 0.0, 1.0);
-    vec3 cinematicColor = mix(vColor * 1.08, vec3(1.0), 0.72 + whiteMix * 0.25);
-    gl_FragColor = vec4(cinematicColor, clamp(intensity, 0.0, 1.0));
+    // Brightness lives in the alpha this additive pass weighs the colour by, so what is mixed here
+    // is only the hue of the light the bands add up to. A pixel the core owns comes out white
+    // however saturated the Glyph is; one the outer haze owns comes out in the Glyph colour.
+    float along = light.w / max(energy, 1e-4);
+    vec3 hazeTint = mix(whitened(vColor, BODY_WHITENING), deepened(vColor), 0.62);
+    vec3 banded = hazeTint * light.x + rayTint(vColor, along) * (light.y - light.z) + vec3(1.0) * light.z;
+    gl_FragColor = vec4(banded / max(energy, 1e-4), clamp(intensity, 0.0, 1.0));
   }
 `;
 
@@ -397,7 +458,7 @@ function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: Glyph
       state.nodes.positions.set(node.position, offset);
       writeGlyphColor(state.nodes.colors, offset, node.proximity, color);
       state.nodes.opacities[nodeCount] = node.opacity * 0.72;
-      state.nodes.sizes[nodeCount] = (profile === "mobile" ? 48 : 64) + node.proximity * (profile === "mobile" ? 12 : 18);
+      state.nodes.sizes[nodeCount] = glyphStarDiameter(node.distance, profile);
       state.nodes.phases[nodeCount] = glyphStarSpikePhase(node.systemId);
       nodeCount += 1;
     }

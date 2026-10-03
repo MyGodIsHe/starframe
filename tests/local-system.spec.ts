@@ -379,6 +379,18 @@ test("renders constellation glyphs from real stars instead of the retired marker
   await expect(scene).not.toHaveAttribute("data-constellation-marker-count", /.*/);
 });
 
+test("draws a glyph star wider the closer its solar system is", async ({ page }) => {
+  await page.goto("/?snapshotTime=0");
+
+  const scene = page.getByRole("application");
+  await expect(scene).toHaveAttribute("data-constellation-star-diameters", /[\d.]+:[\d.]+/);
+  const [narrowest, widest] = (await scene.getAttribute("data-constellation-star-diameters"))!.split(":").map(Number);
+  // The sky over the starting system spans a few light years of glyph stars, so the nearest has to
+  // come out markedly wider than the farthest - a size cue that only varied by a hair would read as
+  // every star being drawn the same.
+  expect(widest).toBeGreaterThan(narrowest * 1.3);
+});
+
 test("keeps drawing constellation glyphs and their spiked stars while decelerating through a stargate", async ({ page }) => {
   await page.goto("/?snapshotTime=0");
   await page.getByRole("button", { name: "Stargate to Ashab" }).click();

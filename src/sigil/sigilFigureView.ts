@@ -1,4 +1,5 @@
 import type { ConstellationGlyph } from "../constellations/constellationGlyphModel";
+import { GLYPH_STAR_PREVIEW_DISTANCE } from "../constellations/glyphStarSpikes";
 import { drawnEdges, isVertexVisible, type SolidPoint } from "../constellations/glyphSolid";
 import type { SigilModel } from "../constellations/sigilModel";
 import type { Vector3 } from "../universe/generateUniverse";
@@ -50,6 +51,10 @@ export function viewSigilFigure(model: SigilModel, observer: SolidPoint): Conste
       position: anchor.position as Vector3,
       opacity: 1,
       proximity: proximityOf(anchor.position, observer),
+      // An anchor is a place on a model, not a star somewhere in New Eden, so it has no distance of
+      // its own to grow or shrink by. Every one of them is drawn at the size the sky gives a star a
+      // light year out, which is what makes the page a preview of a typical one.
+      distance: GLYPH_STAR_PREVIEW_DISTANCE,
     }));
 
   return { constellationId: WORKSHOP_CONSTELLATION_ID, opacity: 1, nodes, strokes };

@@ -40,6 +40,8 @@ export type ConstellationGlyphNode = {
   position: Vector3;
   opacity: number;
   proximity: number;
+  /** Physical metres between the observer's Solar System and this one, before any projection. */
+  distance: number;
 };
 
 // One drawn line of a glyph.
@@ -273,5 +275,6 @@ function projectNode(system: ConstellationSystem, observerPosition: Vector3): Co
     position: [offset[0] * scale, offset[1] * scale, offset[2] * scale],
     opacity: Math.min(1, distance / COINCIDENCE_FADE_DISTANCE),
     proximity: Math.max(0, 1 - distance / DEPTH_CUE_DISTANCE),
+    distance,
   };
 }

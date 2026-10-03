@@ -83,8 +83,16 @@ A restrained colour cue derived from a Solar System's real SDE spectral class, s
 _Avoid_: physically exact stellar colour temperature, random or region-based tint, an aggregate glow colour with no per-star source
 
 **Glyph Star Spikes**:
-Eight screen-space arms drawn around every Solar System node belonging to a currently visible Constellation Glyph. Four of the arms reach out and brighten while the four between them draw in and dim, trading places over a slow cycle, so the star twinkles rather than pulsing as a whole; that twinkle starts from a phase fixed by the System's own identity, and together with the Glyph's assigned colour it identifies the star as part of that figure. Ordinary Celestial Map stars never receive spikes because of brightness, radius, or local density, and every arm is read several times within each pixel, so the pixel grid cannot make one stutter as the camera turns.
+Eight screen-space arms drawn around every Solar System node belonging to a currently visible Constellation Glyph. Four of the arms reach out and brighten while the four between them draw in and dim, trading places over a cycle of a few seconds, so the star twinkles rather than pulsing as a whole; that twinkle starts from a phase fixed by the System's own identity, which also leans the star onto one pair of its optical axes for good. Ordinary Celestial Map stars never receive spikes because of brightness, radius, or local density, and every arm is read several times within each pixel, so the pixel grid cannot make one stutter as the camera turns.
 _Avoid_: physical telescope diffraction, stellar-luminosity indicator, spikes on stars outside visible Glyphs, synchronized flashing, a whole-star brightness pulse
+
+**Glyph Star Light**:
+How a Glyph Star is coloured: a white-hot core, arms carrying the Glyph's own assigned colour, and a wide haze of that colour around them, with the far half of each arm deepening into it and its channels spread slightly apart. It is what identifies a star as part of that figure rather than a Celestial Map star, and it is light with a temperature across it, not one fill tinted at the end.
+_Avoid_: one flat colour over the whole star, a tint applied to a finished white flare, Spectral Tint, a colour that says anything about the star itself
+
+**Glyph Star Size**:
+The drawn diameter of a Glyph Star, which grows as the observer's Solar System comes closer to the star's own. It falls off on the same distance scale as the Distance Cue, so size and map brightness tell one story about distance; nothing about it is normalized against the glyphs currently in the sky, so a star keeps its size when its neighbours leave and growing always means the observer came closer.
+_Avoid_: physical stellar radius, dataset-relative min/max normalization, a size that changes with camera zoom, Glyph Depth Cue
 
 **Sky Backdrop**:
 A single faint, camera-centred shading layer drawn behind every Celestial Map star: a near-black field with slow direction-space noise and darker wide streaks, fixed relative to sky direction rather than the camera's orientation or travel position. It supports the impression of galactic structure but never substitutes for it.
