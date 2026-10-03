@@ -1,6 +1,6 @@
 import { travelSkyProgress, type TravelFrame } from "../travelCoordinates";
 import type { Vector3 } from "../universe/generateUniverse";
-import { boundsOf, selectVisibleConstellationIds, type GlyphBounds } from "./glyphVisibility";
+import { boundsOf, centreOf, selectVisibleConstellationIds, type GlyphBounds } from "./glyphVisibility";
 import { buildGlyphShape, type GlyphShape } from "./glyphShape";
 import { drawnEdges } from "./glyphSolid";
 import { figureForConstellation } from "./sigilMotifs";
@@ -66,6 +66,12 @@ export type ConstellationGlyph = {
   opacity: number;
   nodes: ConstellationGlyphNode[];
   strokes: ConstellationGlyphStroke[];
+  /**
+   * How far the figure reaches across its constellation, as a multiple of the distance to the
+   * farthest member. A glyph wearing no artwork reports 0. The Celestial Map publishes it so the
+   * size a figure came out at is something a test can read.
+   */
+  reach: number;
 };
 
 // Every glyph is built once per SDE build, in the constellation's own frame. Nothing here depends
@@ -93,7 +99,10 @@ export function compileConstellationGlyphIndex(systems: readonly ConstellationSy
       ...members.map((member) => member.position),
       ...(shape?.solids.flatMap((solid) => solid.vertices as readonly Vector3[]) ?? []),
     ];
-    const bounds = boundsOf(constellationId, extent);
+    // A shape already knows the constellation's centre, because that is what it was framed on; a
+    // constellation too degenerate to carry a figure still has one to work out.
+    const centre = shape?.centre ?? centreOf(members.map((member) => member.position));
+    const bounds = centre && boundsOf(constellationId, centre, extent);
     if (bounds) boundsByConstellation.set(constellationId, bounds);
   }
 
@@ -160,12 +169,14 @@ function projectGlyph(index: ConstellationGlyphIndex, observerPosition: Vector3,
   const systems = index.systemsByConstellation.get(constellationId) ?? [];
   const nodes = systems.map((system) => projectNode(system, observerPosition));
   const shape = index.shapeByConstellation.get(constellationId);
+  const strokes = shape ? projectShape(shape, observerPosition, isHome, nodes, systems, opacity) : [];
 
   return {
     constellationId,
     opacity,
     nodes: nodes.map((node) => ({ ...node, opacity: node.opacity * opacity })),
-    strokes: shape ? projectShape(shape, observerPosition, isHome, nodes, systems, opacity) : [],
+    strokes,
+    reach: shape && strokes.length > 0 ? shape.reach : 0,
   };
 }
 

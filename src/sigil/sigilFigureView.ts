@@ -57,7 +57,9 @@ export function viewSigilFigure(model: SigilModel, observer: SolidPoint): Conste
       distance: GLYPH_STAR_PREVIEW_DISTANCE,
     }));
 
-  return { constellationId: WORKSHOP_CONSTELLATION_ID, opacity: 1, nodes, strokes };
+  // The page stands one figure on its own, with no constellation to be the size of, so there is
+  // no reach to report. It is the sky that measures a figure against its own Solar Systems.
+  return { constellationId: WORKSHOP_CONSTELLATION_ID, opacity: 1, nodes, strokes, reach: 0 };
 }
 
 // Glyph Depth Cue, over the one object on the page: the near side of the body is sharp cyan and its

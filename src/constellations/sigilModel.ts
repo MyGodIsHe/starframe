@@ -2,6 +2,7 @@ import { buildModelSolid, type GlyphSolid, type SolidPoint } from "./glyphSolid"
 import { buildAtom } from "./sigilAtom";
 import { buildBolt } from "./sigilBolt";
 import { buildCheese } from "./sigilCheese";
+import { framingsFor, type FitPoint, type Placement } from "./sigilFit";
 import { buildHammer } from "./sigilHammer";
 import { buildRing } from "./sigilRing";
 
@@ -32,6 +33,12 @@ export type SigilModel = {
   solid: GlyphSolid;
   /** The model's own extremities, where a real Solar System is meant to land. */
   anchors: readonly SigilAnchor[];
+  /**
+   * Every way this figure may stand on a Constellation: how big and how centred follow from the body
+   * and the turn alone, so they are settled here, once, rather than again for each of the hundreds of
+   * Constellations that wear the figure.
+   */
+  framings: readonly Placement[];
 };
 
 type RawModel = {
@@ -59,7 +66,10 @@ export function readSigilModel(raw: unknown): SigilModel | null {
   if (!solid) return null;
 
   const anchors = asIndices(model.anchors, vertices.length).map((vertex): SigilAnchor => ({ vertex, position: vertices[vertex] }));
-  return { name: model.name, source: typeof model.source?.file === "string" ? model.source.file : "unknown", solid, anchors };
+  const framings = framingsFor(vertices.map((vertex): FitPoint => [vertex[0], vertex[1]]));
+  if (framings.length === 0) return null;
+
+  return { name: model.name, source: typeof model.source?.file === "string" ? model.source.file : "unknown", solid, anchors, framings };
 }
 
 // The sculpted bodies this build ships with.

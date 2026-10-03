@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildGlyphShape, type GlyphShape } from "./glyphShape";
+import { FIGURE_EXTENT } from "./sigilFit";
 import { readSigilModel } from "./sigilModel";
 import { buildRing } from "./sigilRing";
 import type { Vector3 } from "../universe/generateUniverse";
@@ -48,6 +49,33 @@ function bodyThickness(shape: GlyphShape): number {
   return Number.isFinite(least) && across > 0 ? (most - least) / (2 * across) : 0;
 }
 
+// How far the drawing reaches across the constellation's own plane and where it is centred in it,
+// both as multiples of the constellation's radius. Measured from the absolute vertices rather than
+// read off `shape.reach`, so the figure is being asked rather than the number it reports.
+function inThePlane(shape: GlyphShape): { reach: number; offset: number } {
+  const right: Vector3 = [
+    shape.up[1] * shape.normal[2] - shape.up[2] * shape.normal[1],
+    shape.up[2] * shape.normal[0] - shape.up[0] * shape.normal[2],
+    shape.up[0] * shape.normal[1] - shape.up[1] * shape.normal[0],
+  ];
+  const flat = shape.solids.flatMap((solid) =>
+    solid.vertices.map((vertex): [number, number] => {
+      const offset = [0, 1, 2].map((axis) => vertex[axis] - shape.centre[axis]);
+      return [
+        (offset[0] * right[0] + offset[1] * right[1] + offset[2] * right[2]) / shape.radius,
+        (offset[0] * shape.up[0] + offset[1] * shape.up[1] + offset[2] * shape.up[2]) / shape.radius,
+      ];
+    }));
+
+  const middle = (axis: 0 | 1): number =>
+    (Math.min(...flat.map((point) => point[axis])) + Math.max(...flat.map((point) => point[axis]))) / 2;
+
+  return {
+    reach: Math.max(...flat.map((point) => Math.hypot(point[0], point[1]))),
+    offset: Math.hypot(middle(0), middle(1)),
+  };
+}
+
 // The same measurement taken of the model itself, in its own space, where its centre is the origin.
 function modelThickness(): number {
   let least = Infinity;
@@ -88,6 +116,29 @@ describe("buildGlyphShape", () => {
     expect(reversed.length).toBe(forward.length);
     for (const [index, point] of reversed.entries()) {
       for (let axis = 0; axis < 3; axis += 1) expect(point[axis] / 1e15).toBeCloseTo(forward[index][axis] / 1e15, 6);
+    }
+  });
+
+  it("draws every figure out to the same share of its constellation's radius", () => {
+    // What the eye was complaining about before the framing rule: a figure came out at a median of
+    // 0.74 of its constellation's radius and as little as 0.27, so the stars held the patch of sky
+    // and the artwork sat inside it. Now one multiple, every constellation.
+    const lopsided = [...FLAT.slice(0, 3), { id: 9, position: [-2.4e16, -1.9e16, 0] as Vector3 }];
+
+    for (const members of [FLAT, DEEP, lopsided]) {
+      const shape = buildGlyphShape(members, FIGURE)!;
+      const { reach } = inThePlane(shape);
+
+      expect(reach).toBeCloseTo(FIGURE_EXTENT, 6);
+      expect(shape.reach).toBeCloseTo(reach, 6);
+    }
+  });
+
+  it("stands a figure on its constellation's own centre, not beside it", () => {
+    // The other half of the same complaint: the retired fit landed the centre of whichever stars its
+    // anchors happened to match, which stood a figure off to one side by up to half the radius.
+    for (const members of [FLAT, DEEP, [...FLAT.slice(0, 3), { id: 9, position: [-2.4e16, -1.9e16, 0] as Vector3 }]]) {
+      expect(inThePlane(buildGlyphShape(members, FIGURE)!).offset).toBeCloseTo(0, 6);
     }
   });
 
@@ -132,6 +183,10 @@ describe("buildGlyphShape", () => {
       radius = Math.max(radius, Math.hypot(point[0] - centre[0], point[1] - centre[1], point[2] - centre[2]));
     }
     expect(Number.isFinite(radius)).toBe(true);
+    // The framing rule reaches out to a fixed multiple of the constellation's radius and no further,
+    // which is a tighter promise than the loose ceiling this test used to settle for. The leads a
+    // stray system earns run from the system itself, so they are allowed past it.
+    expect(inThePlane(shape).reach).toBeCloseTo(FIGURE_EXTENT, 6);
     expect(radius).toBeLessThan(2e17);
   });
 

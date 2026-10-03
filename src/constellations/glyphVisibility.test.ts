@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   boundsOf,
+  centreOf,
   clearsFootprint,
   computeGlyphFootprint,
   GLYPH_SEPARATION_RADIANS,
@@ -23,16 +24,30 @@ function ballAt(constellationId: number, centre: Vector3, radius: number): Glyph
 
 describe("boundsOf", () => {
   it("encloses every point it is given, artwork as well as stars", () => {
-    const bounds = boundsOf(1, [[10, 0, 0], [10, 4, 0], [10, -4, 0], [14, 0, 3]])!;
+    const points: Vector3[] = [[10, 0, 0], [10, 4, 0], [10, -4, 0], [14, 0, 3]];
+    const bounds = boundsOf(1, centreOf(points)!, points)!;
 
-    for (const point of [[10, 0, 0], [10, 4, 0], [10, -4, 0], [14, 0, 3]] as Vector3[]) {
+    for (const point of points) {
       const offset = Math.hypot(point[0] - bounds.centre[0], point[1] - bounds.centre[1], point[2] - bounds.centre[2]);
       expect(offset).toBeLessThanOrEqual(bounds.radius + 1e-9);
     }
   });
 
+  it("lets a dense patch of artwork vote no harder than one Solar System", () => {
+    // The sphere is reserved around the Constellation, so where a body happens to carry a lot of
+    // vertices cannot drag it. Averaging the whole point set is what used to let it.
+    const stars: Vector3[] = [[-10, 0, 0], [10, 0, 0]];
+    const crowded: Vector3[] = Array.from({ length: 200 }, (_, index) => [9 + index / 400, 0, 0] as Vector3);
+
+    const bounds = boundsOf(1, centreOf(stars)!, [...stars, ...crowded])!;
+
+    expect(bounds.centre).toEqual([0, 0, 0]);
+    expect(bounds.radius).toBeCloseTo(10, 6);
+  });
+
   it("has nothing to bound when given nothing", () => {
-    expect(boundsOf(1, [])).toBeNull();
+    expect(boundsOf(1, [0, 0, 0], [])).toBeNull();
+    expect(centreOf([])).toBeNull();
   });
 });
 

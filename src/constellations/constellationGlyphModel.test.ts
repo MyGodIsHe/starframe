@@ -82,7 +82,7 @@ describe("projectConstellationGlyphs", () => {
         ...members.map((member) => member.position),
         ...shape.solids.flatMap((solid) => solid.vertices.map((vertex) => [...vertex] as [number, number, number])),
       ];
-      expect(index.boundsByConstellation.get(constellationId)).toEqual(boundsOf(constellationId, drawnExtent));
+      expect(index.boundsByConstellation.get(constellationId)).toEqual(boundsOf(constellationId, shape.centre, drawnExtent));
     }
   });
 

@@ -186,6 +186,7 @@ export function SceneViewport({ camera, onCameraChange, star, planets, gates, ac
            data-constellation-spike-star-count={constellationGlyphs.reduce((total, glyph) => total + glyph.nodes.filter((node) => node.opacity > 0.001).length, 0)}
            data-constellation-spikes-per-star={GLYPH_STAR_SPIKE_COUNT}
            data-constellation-star-diameters={glyphStarDiameterRange(constellationGlyphs, quality.name)}
+           data-constellation-glyph-reach={glyphReachRange(constellationGlyphs)}
           data-celestial-preview-arc-count={previewEdges.length}
       data-jump-preview-system-ids={previewSystems.map((system) => system.id).join(",") || undefined}
          data-jump-preview-edges={previewEdges.map((edge) => edge.join(":" )).join(",") || undefined}
@@ -817,6 +818,15 @@ function BackgroundStars({ field }: { field: DecorativeStarField }): ReactNode {
 function glyphStarDiameterRange(glyphs: ReturnType<typeof projectTravelConstellationGlyphs>, profile: RenderQuality["name"]): string {
   const diameters = glyphs.flatMap((glyph) => glyph.nodes.filter((node) => node.opacity > 0.001).map((node) => glyphStarDiameter(node.distance, profile)));
   return diameters.length === 0 ? "" : `${Math.min(...diameters).toFixed(1)}:${Math.max(...diameters).toFixed(1)}`;
+}
+
+// The smallest and largest figure in the sky, as multiples of their own constellation's radius, so
+// that a figure drawn the size of its stars is something a test can read. Both halves report the
+// same number, because that is the promise: a figure is framed out to one fixed multiple, whatever
+// constellation it stands in and wherever the observer is.
+function glyphReachRange(glyphs: ReturnType<typeof projectTravelConstellationGlyphs>): string {
+  const reaches = glyphs.filter((glyph) => glyph.reach > 0).map((glyph) => glyph.reach);
+  return reaches.length === 0 ? "" : `${Math.min(...reaches).toFixed(2)}:${Math.max(...reaches).toFixed(2)}`;
 }
 
 function CelestialMap({ systems, activeSystemId, travel, constellationGlyphIndex, constellationGlyphs, previewEdges, previewLeaving, quality, reducedMotion, snapshotTime }: { systems: UniverseIndex["systems"]; activeSystemId: number; travel: TravelFrame | null; constellationGlyphIndex: ReturnType<typeof compileConstellationGlyphIndex>; constellationGlyphs: ReturnType<typeof projectTravelConstellationGlyphs>; previewEdges: [number, number][]; previewLeaving: boolean; quality: RenderQuality; reducedMotion: boolean; snapshotTime: number | null }): ReactNode {

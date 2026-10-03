@@ -4,6 +4,12 @@ import type { Vector3 } from "../universe/generateUniverse";
 // sphere enclosing everything the glyph draws - its Solar Systems and its figure alike - and that
 // sphere's radius. Bounding the artwork rather than the bare star cloud is what lets Glyph
 // Occlusion promise that two drawn glyphs never overlap.
+//
+// The centre is handed in rather than averaged out of the points. Averaging them put the centre
+// wherever the artwork's vertices were densest - a few hundred of them against six Solar Systems -
+// so the sphere Glyph Occlusion reserved was decided by how a body happened to be triangulated. A
+// Constellation's centre is the centre of its own Solar Systems, which is also what a figure is now
+// framed on, so the two agree and a mesh gets no vote.
 export type GlyphBounds = {
   constellationId: number;
   centre: Vector3;
@@ -26,17 +32,23 @@ export const LEGIBILITY_FLOOR_RADIANS = (8 * Math.PI) / 180;
 // Clear sky kept between two drawn glyphs, on top of their own radii.
 export const GLYPH_SEPARATION_RADIANS = (3 * Math.PI) / 180;
 
-export function boundsOf(constellationId: number, points: readonly Vector3[]): GlyphBounds | null {
+export function boundsOf(constellationId: number, centre: Vector3, points: readonly Vector3[]): GlyphBounds | null {
   if (points.length === 0) return null;
-
-  const centre: Vector3 = [0, 0, 0];
-  for (const point of points) for (let axis = 0; axis < 3; axis += 1) centre[axis] += point[axis] / points.length;
 
   let radius = 0;
   for (const point of points) {
     radius = Math.max(radius, Math.hypot(point[0] - centre[0], point[1] - centre[1], point[2] - centre[2]));
   }
-  return { constellationId, centre, radius };
+  return { constellationId, centre: [...centre], radius };
+}
+
+/** The centre of a Constellation's own Solar Systems, which is what its glyph is built around. */
+export function centreOf(positions: readonly Vector3[]): Vector3 | null {
+  if (positions.length === 0) return null;
+
+  const centre: Vector3 = [0, 0, 0];
+  for (const position of positions) for (let axis = 0; axis < 3; axis += 1) centre[axis] += position[axis] / positions.length;
+  return centre;
 }
 
 export function computeGlyphFootprint(bounds: GlyphBounds, observerPosition: Vector3): GlyphFootprint | null {

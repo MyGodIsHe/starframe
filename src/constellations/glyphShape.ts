@@ -1,6 +1,6 @@
 import type { Vector3 } from "../universe/generateUniverse";
 import { mapSolid, type GlyphSolid, type SolidPoint } from "./glyphSolid";
-import { fitAnchors, placePoint, FIGURE_EXTENT, LEAD_THRESHOLD, type ChartStar, type FitPoint, type Placement } from "./sigilFit";
+import { frameFigure, placePoint, LEAD_THRESHOLD, type ChartStar, type FitPoint, type Placement } from "./sigilFit";
 import type { SigilModel } from "./sigilModel";
 
 // A Constellation Glyph as a fixed object in space.
@@ -13,10 +13,11 @@ import type { SigilModel } from "./sigilModel";
 // object seen from somewhere else, not a new drawing.
 //
 // What gets placed is a sculpted body, and it arrives with its volume already. Nothing here gives
-// it depth, thickens it or turns it about an axis - the model is the artwork, and the fit decides
-// only where in the constellation it stands, how big it is and which way up. That is the whole
-// difference from the line art this replaced: a drawing had to be made into a body by rule, and
-// every such rule was a guess about a shape nobody drew.
+// it depth, thickens it or turns it about an axis - the model is the artwork. Where it stands and
+// how big it comes out are the constellation's to say, and `sigilFit` says them as a rule: centred
+// on the constellation, drawn out to a fixed multiple of its radius. All the anchors settle is which
+// way up. That is the whole difference from the line art this replaced: a drawing had to be made
+// into a body by rule, and every such rule was a guess about a shape nobody drew.
 //
 // The model's own x and y lie in the constellation's plane and its z stands through it, so a figure
 // faces the way its constellation does and keeps the galactic sense of up.
@@ -41,6 +42,12 @@ export type GlyphShape = {
   up: Vector3;
   /** Distance from the centre to the farthest member, in metres. */
   radius: number;
+  /**
+   * How far the drawing reaches across the constellation's plane, as a multiple of `radius`. The
+   * framing rule settles it, so it is `FIGURE_EXTENT` for every glyph - which is the point, and
+   * what the Celestial Map publishes so a test can read the size a figure came out at.
+   */
+  reach: number;
 };
 
 type ShapeSystem = {
@@ -78,19 +85,13 @@ export function buildGlyphShape(input: readonly ShapeSystem[], model: SigilModel
     x: planar[index].x / radius,
     y: planar[index].y / radius,
   }));
-  const fit = fitAnchors(model.anchors.map((anchor): FitPoint => [anchor.position[0], anchor.position[1]]), stars);
+  // How big the figure comes out and where it is centred were settled when it joined the library -
+  // the framing rule asks the body and the turn, never the constellation. All that is left here is
+  // which of those framings this constellation's own systems answer best.
+  const fit = frameFigure(model.framings, model.anchors.map((anchor): FitPoint => [anchor.position[0], anchor.position[1]]), stars);
   if (!fit) return null;
 
-  // Glyph Occlusion reserves a fixed reach around a glyph's footprint, so a figure the fit placed
-  // wider than that is brought back inside it whole rather than cropped.
-  let reach = 0;
-  for (const vertex of model.solid.vertices) {
-    const placed = place(vertex, fit.placement, 1);
-    reach = Math.max(reach, Math.hypot(placed[0], placed[1]));
-  }
-  const containment = reach > FIGURE_EXTENT ? FIGURE_EXTENT / reach : 1;
-
-  const toChart = (point: SolidPoint): SolidPoint => place(point, fit.placement, containment);
+  const toChart = (point: SolidPoint): SolidPoint => place(point, fit.placement);
   const toAbsolute = (point: SolidPoint): SolidPoint => [
     centroid[0] + (frame.right[0] * point[0] + frame.up[0] * point[1] + frame.normal[0] * point[2]) * radius,
     centroid[1] + (frame.right[1] * point[0] + frame.up[1] * point[1] + frame.normal[1] * point[2]) * radius,
@@ -116,6 +117,11 @@ export function buildGlyphShape(input: readonly ShapeSystem[], model: SigilModel
     return [{ systemId: star.systemId, from: systems[index].position, to: toAbsolute([nearest[0], nearest[1], 0]) as Vector3 }];
   });
 
+  // Measured off the placed body rather than restated from the constant, so what a glyph reports is
+  // the size it actually came out at.
+  let reach = 0;
+  for (const vertex of chartVertices) reach = Math.max(reach, Math.hypot(vertex[0], vertex[1]));
+
   return {
     solids: [mapSolid(model.solid, (point) => toAbsolute(toChart(point)), toDirection)],
     leads,
@@ -123,14 +129,15 @@ export function buildGlyphShape(input: readonly ShapeSystem[], model: SigilModel
     normal: frame.normal,
     up: frame.up,
     radius,
+    reach,
   };
 }
 
-// The model in chart space: turned and scaled onto the stars, then brought inside the reserved
-// reach. Both are similarities, so the body stays the body it was sculpted as.
-function place(point: SolidPoint, placement: Placement, containment: number): SolidPoint {
+// The model in chart space, framed on the constellation and turned to face it. A similarity and
+// nothing else, so the body stays the body it was sculpted as.
+function place(point: SolidPoint, placement: Placement): SolidPoint {
   const flat = placePoint([point[0], point[1]], placement);
-  return [flat[0] * containment, flat[1] * containment, point[2] * placement.scale * containment];
+  return [flat[0], flat[1], point[2] * placement.scale];
 }
 
 function turn(point: FitPoint, rotation: number): FitPoint {

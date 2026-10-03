@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConstellationGlyph } from "./constellationGlyphModel";
 import { assignGlyphColors, buildGlyphAdjacency } from "./glyphColoring";
+import { FIGURE_EXTENT } from "./sigilFit";
 
 function glyph(constellationId: number, degrees: number): ConstellationGlyph {
   const radians = (degrees * Math.PI) / 180;
@@ -10,6 +11,7 @@ function glyph(constellationId: number, degrees: number): ConstellationGlyph {
     opacity: 1,
     nodes: [{ systemId: constellationId, position, opacity: 1, proximity: 0.5, distance: 9_460_000_000_000_000 }],
     strokes: [{ kind: "silhouette", from: position, to: position, opacity: 1, proximity: 0.5 }],
+    reach: FIGURE_EXTENT,
   };
 }
 

@@ -35,11 +35,11 @@ What a pilot gets from a glyph being a fixed object: moving through New Eden sho
 _Avoid_: re-fitting a glyph to the current viewpoint, turning a glyph to face the camera, parallax within one stationary view
 
 **Glyph Footprint**:
-The spherical cap a Constellation occupies on the sky: the direction of the mean of its Solar System directions, and the angular radius reaching the farthest of them. A Sigil Figure is drawn out to a fixed multiple of that radius, and it is the larger drawn extent that Glyph Occlusion reserves.
-_Avoid_: screen bounding box, a radius in metres, the physical size of the Constellation
+The spherical cap a Constellation occupies on the sky: the direction of the mean of its Solar System directions, and the angular radius reaching the farthest of them. A Sigil Figure is framed on that same cap - concentric with it, and drawn across it to exactly a fixed multiple of that radius - so a figure and its Solar Systems occupy one patch of sky rather than the figure sitting small and off to one side. A sculpted body's own depth can still carry its far corner a little past the cap, and it is that larger drawn extent that Glyph Occlusion reserves.
+_Avoid_: screen bounding box, a radius in metres, the physical size of the Constellation, a figure smaller than its own Constellation, a drawn extent fitted rather than framed
 
 **Glyph Occlusion**:
-The rule that decides which glyphs are drawn. Constellations are taken nearest first, by the distance to their closest Solar System, and one is kept only when its drawn extent clears every already-kept glyph's drawn extent with room to spare. A Constellation blocked by something in front of it is dropped whole. The Constellation the observer stands in surrounds them rather than occupying a patch of sky, so it is always drawn and never claims room.
+The rule that decides which glyphs are drawn. Constellations are taken nearest first, by the distance to their closest Solar System, and one is kept only when its drawn extent clears every already-kept glyph's drawn extent with room to spare. The sphere a Constellation reserves is centred on its own Solar Systems and reaches the furthest thing it draws, so how densely a body happens to be triangulated has no say in it. A Constellation blocked by something in front of it is dropped whole. The Constellation the observer stands in surrounds them rather than occupying a patch of sky, so it is always drawn and never claims room.
 _Avoid_: hiding individual stars, trimming a glyph, a depth buffer, selection by Stargate connectivity or by a fixed radius
 
 **Legibility Floor**:
@@ -51,8 +51,8 @@ A Constellation Glyph is shown whole or not at all: opacity belongs to the glyph
 _Avoid_: fading one node, hiding one star behind another, a glyph missing its far side
 
 **Sigil Figure**:
-One sculpted body from the shared library - a bolt, an atom, a ring, a hammer, a wedge of cheese, a wolf, a vessel - with anchors on its most characteristic extremities, where real Solar Systems are meant to land. A figure has an inherent upright and is only ever tilted slightly within its Glyph Frame, because a crown lying on its side stops being a crown. The fit moves the whole body onto the stars - turn, scale, shift - and never reshapes it.
-_Avoid_: a body built out of flat line art by rule, a shape derived from Solar System positions, a figure generated per Constellation, free rotation within the frame, a silhouette that needs fill or colour to read
+One sculpted body from the shared library - a bolt, an atom, a ring, a hammer, a wedge of cheese, a wolf, a vessel - with anchors on its most characteristic extremities, where real Solar Systems are meant to land. A figure has an inherent upright and is only ever tilted slightly within its Glyph Frame, because a crown lying on its side stops being a crown. Where it stands and how big it comes out are not fitted: the body is framed on the Glyph Footprint by rule. The anchors settle one thing only - the slight turn that brings the most of them onto real Solar Systems while leaving the fewest standing in empty sky - and the move stays a similarity that never reshapes the body.
+_Avoid_: a body built out of flat line art by rule, a shape derived from Solar System positions, a figure generated per Constellation, free rotation within the frame, a silhouette that needs fill or colour to read, a body shrunk by least squares onto the stars it happened to match, a figure centred on its matched anchors rather than on its Constellation
 
 **Sigil Motif**:
 Which Sigil Figure a Constellation wears, chosen from its real name and Region, together with the caption naming the idea.

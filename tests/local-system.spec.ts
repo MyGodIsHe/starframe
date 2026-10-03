@@ -391,6 +391,20 @@ test("draws a glyph star wider the closer its solar system is", async ({ page })
   expect(widest).toBeGreaterThan(narrowest * 1.3);
 });
 
+test("draws every figure out to the same share of its own constellation", async ({ page }) => {
+  await page.goto("/?snapshotTime=0");
+
+  const scene = page.getByRole("application");
+  await expect(scene).toHaveAttribute("data-constellation-glyph-reach", /[\d.]+:[\d.]+/);
+  const [smallest, largest] = (await scene.getAttribute("data-constellation-glyph-reach"))!.split(":").map(Number);
+  // A figure is framed on its constellation rather than fitted to whichever systems its anchors
+  // reached, so every figure in the sky comes out at one multiple of its own constellation's radius.
+  // The figures used to range from a quarter of that radius to a third over it, which is what made a
+  // glyph read as artwork standing beside its stars instead of as the same object.
+  expect(smallest).toBeCloseTo(1.15, 2);
+  expect(largest).toBeCloseTo(1.15, 2);
+});
+
 test("keeps drawing constellation glyphs and their spiked stars while decelerating through a stargate", async ({ page }) => {
   await page.goto("/?snapshotTime=0");
   await page.getByRole("button", { name: "Stargate to Ashab" }).click();
