@@ -5,6 +5,14 @@ export type PlanetAppearance = {
 };
 
 export const SCENE_PALETTE = {
+  glyph: [
+    "#69d9ff",
+    "#7aa2ff",
+    "#a78bfa",
+    "#d884f0",
+    "#f08fbd",
+    "#6fd6c0",
+  ],
   gate: {
     idle: "#d19a52",
     active: "#ffe3a3",

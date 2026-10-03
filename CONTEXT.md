@@ -59,8 +59,12 @@ Which Sigil Figure a Constellation wears, chosen from its real name and Region, 
 _Avoid_: a randomly picked figure, one figure shared by a whole Region, a choice that changes between sessions
 
 **Glyph Depth Cue**:
-The relative sharpness, brightness, width, and colour of a Constellation Glyph stroke. Strokes physically nearer to the observer are sharper cyan and overlap thinner violet distant ones; a Sigil Figure's strokes inherit the depth of the Solar Systems they run past. The same depth also sets the order Glyph Occlusion works in.
-_Avoid_: physical edge thickness, bloom-heavy solid object, a depth invented for artwork
+The relative sharpness, brightness, and width of a Constellation Glyph stroke. Strokes physically nearer to the observer are brighter and overlap dimmer distant ones without changing the glyph's assigned hue; a Sigil Figure's strokes inherit the depth of the Solar Systems they run past. The same depth also sets the order Glyph Occlusion works in.
+_Avoid_: physical edge thickness, bloom-heavy solid object, a depth invented for artwork, changing a glyph from violet to cyan as the observer moves
+
+**Glyph Colouring**:
+A colouring of the Relative Neighbourhood Graph formed by the Constellation Glyphs on the current sky. Immediate visual neighbours receive different hues from the shared cool neon palette. A journey is coloured before motion begins and then holds those hues for every travel frame; at that boundary, only a glyph whose old hue would collide with a new neighbour is reassigned. After a glyph leaves the sky completely, its hue may be reused and the glyph may receive another when encountered again.
+_Avoid_: permanent Region colour, spectral star colour, Stargate-connectivity colouring, recolouring every travel frame, a unique hue for every Constellation in New Eden
 
 **Jump Preview Tree**:
 The deduplicated breadth-first tree of up to three Stargate jumps that begins with the Stargate under hover or focus, rendered as arcs on the Celestial Map.

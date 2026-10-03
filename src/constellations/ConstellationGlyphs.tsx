@@ -1,12 +1,14 @@
 import { useFrame } from "@react-three/fiber";
-import { type ReactNode, useLayoutEffect, useState } from "react";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { AdditiveBlending, BufferAttribute, BufferGeometry, DynamicDrawUsage, InstancedBufferAttribute, type InterleavedBufferAttribute, NormalBlending, Points, ShaderMaterial } from "three";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import type { RenderQuality } from "../renderQuality";
+import { SCENE_PALETTE } from "../scenePalette";
 import { glyphBucketStyles, glyphStrokeIntensity, writeGlyphColor, GLYPH_BUCKET_BY_KIND, GLYPH_BUCKET_COUNT } from "./glyphLineStyle";
-import type { TravelFrame } from "../travelCoordinates";
+import { TRAVEL_DURATION, type TravelFrame } from "../travelCoordinates";
+import { assignGlyphColors } from "./glyphColoring";
 import {
   projectTravelConstellationGlyphs,
   type ConstellationGlyph,
@@ -75,15 +77,28 @@ export function ConstellationGlyphs({ index, activeSystemId, travel, glyphs, qua
   quality: RenderQuality;
 }): ReactNode {
   const [renderState, setRenderState] = useState<GlyphRenderState | null>(null);
+  const colors = useRef(new Map<number, number>());
 
   useLayoutEffect(() => {
-    const state = createRenderState(quality.name, glyphs);
+    const frames = travel
+      ? Array.from({ length: 17 }, (_, step) => projectTravelConstellationGlyphs(
+        index,
+        activeSystemId,
+        travel,
+        travel.startedAt + (TRAVEL_DURATION * step) / 16,
+      ))
+      : [glyphs];
+    colors.current = assignGlyphColors(frames, colors.current, SCENE_PALETTE.glyph.length);
+  }, [activeSystemId, glyphs, index, travel]);
+
+  useLayoutEffect(() => {
+    const state = createRenderState(quality.name, glyphs, colors.current);
     setRenderState(state);
     return () => disposeRenderState(state);
   }, [quality.name]);
 
   useLayoutEffect(() => {
-    if (renderState) syncGlyphRenderData(glyphs, renderState, quality.name);
+    if (renderState) syncGlyphRenderData(glyphs, renderState, quality.name, colors.current);
   }, [glyphs, quality.name, renderState]);
 
   useFrame(({ clock }) => {
@@ -94,6 +109,7 @@ export function ConstellationGlyphs({ index, activeSystemId, travel, glyphs, qua
         projectTravelConstellationGlyphs(index, activeSystemId, travel, performance.now()),
         renderState,
         quality.name,
+        colors.current,
       );
     }
   });
@@ -107,7 +123,7 @@ export function ConstellationGlyphs({ index, activeSystemId, travel, glyphs, qua
   );
 }
 
-function createRenderState(profile: RenderQuality["name"], glyphs: readonly ConstellationGlyph[]): GlyphRenderState {
+function createRenderState(profile: RenderQuality["name"], glyphs: readonly ConstellationGlyph[], colors: ReadonlyMap<number, number>): GlyphRenderState {
   const strokeCapacity = Math.max(1, glyphs.reduce((total, glyph) => total + glyph.strokes.length, 0));
   const nodeCapacity = Math.max(1, glyphs.reduce((total, glyph) => total + glyph.nodes.length, 0));
   const state = {
@@ -116,7 +132,7 @@ function createRenderState(profile: RenderQuality["name"], glyphs: readonly Cons
     nodes: createNodePoints(nodeCapacity),
     nodeCapacity,
   };
-  syncGlyphRenderData(glyphs, state, profile);
+  syncGlyphRenderData(glyphs, state, profile, colors);
   return state;
 }
 
@@ -228,12 +244,13 @@ function createNodePoints(capacity: number): GlyphNodes {
   return { object, positions, colors, opacities, sizes };
 }
 
-function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: GlyphRenderState, profile: RenderQuality["name"]): void {
+function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: GlyphRenderState, profile: RenderQuality["name"], colors: ReadonlyMap<number, number>): void {
   ensureCapacity(state, glyphs);
   const strokeCounts = [0, 0, 0, 0];
   let nodeCount = 0;
 
   for (const glyph of glyphs) {
+    const color = colors.get(glyph.constellationId) ?? 0;
     for (const stroke of glyph.strokes) {
       if (stroke.opacity <= 0.001) continue;
       const bucketIndex = GLYPH_BUCKET_BY_KIND[stroke.kind];
@@ -242,8 +259,8 @@ function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: Glyph
       const offset = strokeIndex * 6;
       bucket.positions.set(stroke.from, offset);
       bucket.positions.set(stroke.to, offset + 3);
-      writeGlyphColor(bucket.colors, offset, stroke.proximity);
-      writeGlyphColor(bucket.colors, offset + 3, stroke.proximity);
+      writeGlyphColor(bucket.colors, offset, stroke.proximity, color);
+      writeGlyphColor(bucket.colors, offset + 3, stroke.proximity, color);
       const intensity = glyphStrokeIntensity(stroke.kind, stroke.opacity, stroke.proximity);
       bucket.opacityStart.setX(strokeIndex, intensity);
       bucket.opacityEnd.setX(strokeIndex, intensity);
@@ -256,7 +273,7 @@ function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: Glyph
       if (node.opacity <= 0.001) continue;
       const offset = nodeCount * 3;
       state.nodes.positions.set(node.position, offset);
-      writeGlyphColor(state.nodes.colors, offset, node.proximity);
+      writeGlyphColor(state.nodes.colors, offset, node.proximity, color);
       state.nodes.opacities[nodeCount] = node.opacity * 0.58;
       state.nodes.sizes[nodeCount] = (profile === "mobile" ? 7 : 10) + node.proximity * (profile === "mobile" ? 4 : 6);
       nodeCount += 1;

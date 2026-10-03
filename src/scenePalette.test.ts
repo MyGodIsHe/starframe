@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { planetAppearance, SCENE_PALETTE } from "./scenePalette";
 
 describe("scene palette", () => {
+  it("keeps enough distinct cool hues to colour a local glyph graph", () => {
+    expect(SCENE_PALETTE.glyph).toHaveLength(6);
+    expect(new Set(SCENE_PALETTE.glyph).size).toBe(SCENE_PALETTE.glyph.length);
+  });
+
   it("assigns a distinct cartographic appearance to every SDE planet class", () => {
     const typeIds = [11, 12, 13, 2014, 2015, 2016, 2017, 2063];
     const appearances = typeIds.map(planetAppearance);

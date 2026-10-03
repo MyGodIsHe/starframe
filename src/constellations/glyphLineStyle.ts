@@ -1,4 +1,5 @@
 import type { RenderQuality } from "../renderQuality";
+import { SCENE_PALETTE } from "../scenePalette";
 import type { ConstellationGlyphStroke } from "./constellationGlyphModel";
 
 // The ladder a Constellation Glyph is drawn on, in one place.
@@ -56,13 +57,24 @@ export function glyphStrokeIntensity(kind: GlyphStrokeKind, opacity: number, pro
   return opacity * (GLYPH_STROKE_FLOOR[kind] + proximity * GLYPH_STROKE_DEPTH_GAIN[kind]);
 }
 
-// Glyph Depth Cue as a colour: a stroke physically nearer the observer is sharper cyan, a distant
-// one violet.
-export function writeGlyphColor(target: Float32Array, offset: number, proximity: number): void {
-  const red = 98 + (85 - 98) * proximity;
-  const green = 91 + (223 - 91) * proximity;
-  const blue = 220 + (255 - 220) * proximity;
-  target[offset] = red / 255;
-  target[offset + 1] = green / 255;
-  target[offset + 2] = blue / 255;
+const GLYPH_COLORS = SCENE_PALETTE.glyph.map(hexColor);
+
+// A glyph owns its hue while depth changes only how much light it appears to return. The small
+// pull towards white close up reads as a sharper core without turning a violet glyph cyan during a
+// jump.
+export function writeGlyphColor(target: Float32Array, offset: number, proximity: number, colorIndex = 0): void {
+  const color = GLYPH_COLORS[colorIndex % GLYPH_COLORS.length];
+  const light = 0.72 + proximity * 0.2;
+  const white = 0.04 + proximity * 0.1;
+  target[offset] = color[0] * light * (1 - white) + white;
+  target[offset + 1] = color[1] * light * (1 - white) + white;
+  target[offset + 2] = color[2] * light * (1 - white) + white;
+}
+
+function hexColor(value: string): readonly [number, number, number] {
+  return [
+    Number.parseInt(value.slice(1, 3), 16) / 255,
+    Number.parseInt(value.slice(3, 5), 16) / 255,
+    Number.parseInt(value.slice(5, 7), 16) / 255,
+  ];
 }
