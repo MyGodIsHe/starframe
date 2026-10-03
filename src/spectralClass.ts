@@ -32,11 +32,9 @@ export function spectralClassColor(spectralClass: string | null | undefined): re
   return SPECTRAL_CLASS_COLOR[parseSpectralClassLetter(spectralClass)];
 }
 
-// Mixes a spectral color toward white by `factor` (0 = unchanged, 1 = pure white) so core, halo and
-// diffraction can share one base spectral temperature while differing in how strongly it reads:
-// halo is desaturated so it never paints large sky regions an aggressive hue, and diffraction is
-// desaturated further still so the rare spike cue reads as bright starlight rather than a colored
-// cross. Never used to invent a new hue - always mixes toward neutral, never away from it.
+// Mixes a spectral color toward white by `factor` (0 = unchanged, 1 = pure white) so a halo can
+// share the core's base spectral temperature without painting large sky regions an aggressive hue.
+// Never used to invent a new hue - always mixes toward neutral, never away from it.
 export function desaturateTowardWhite(color: readonly [number, number, number], factor: number): readonly [number, number, number] {
   const clamped = Math.min(1, Math.max(0, factor));
   return [

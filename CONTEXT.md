@@ -79,16 +79,12 @@ The brightness floor for the most distant Celestial Map stars. It remains higher
 _Avoid_: distance culling, decorative background star
 
 **Spectral Tint**:
-A restrained colour cue derived from a Solar System's real SDE spectral class, shared by its core, halo and diffraction spikes at different strengths - most visible on the core, softened on the halo so a dense cluster's combined glow never paints a large sky region one aggressive hue, and softened further still on a diffraction spike. A dense cluster's combined halo colour is the additive sum of its member stars' own tints, not a separately authored region colour.
+A restrained colour cue derived from a Solar System's real SDE spectral class, shared by its core and halo at different strengths - most visible on the core and softened on the halo so a dense cluster's combined glow never paints a large sky region one aggressive hue. A dense cluster's combined halo colour is the additive sum of its member stars' own tints, not a separately authored region colour.
 _Avoid_: physically exact stellar colour temperature, random or region-based tint, an aggregate glow colour with no per-star source
 
-**Visible Brightness**:
-A Solar System's own individual presentation brightness - a fixed function of its Distance Cue and its SDE star radius alone - used only to decide whether it earns a Diffraction Cue. It is read before any neighbouring System's halo is added in, so crowding a sky region with dim stars can never raise it, and one irrelevant extreme System can never change another System's reading.
-_Avoid_: physical stellar luminosity, a value read from the rendered framebuffer or halo accumulation, neighbour count or local density
-
-**Diffraction Cue**:
-A rare screen-space spike drawn only on the individual Solar Systems whose Visible Brightness clears a fixed threshold - a presentation accent for exceptional individual brightness, not a measure of how crowded the surrounding sky is. A dense cluster of otherwise-ordinary stars earns no spikes on its own.
-_Avoid_: physical telescope diffraction, a density or cluster-brightness indicator, dynamic top-N selection that reorders during Stargate travel
+**Glyph Star Spikes**:
+Eight screen-space arms drawn around every Solar System node belonging to a currently visible Constellation Glyph. Four of the arms reach out and brighten while the four between them draw in and dim, trading places over a slow cycle, so the star twinkles rather than pulsing as a whole; that twinkle starts from a phase fixed by the System's own identity, and together with the Glyph's assigned colour it identifies the star as part of that figure. Ordinary Celestial Map stars never receive spikes because of brightness, radius, or local density, and every arm is read several times within each pixel, so the pixel grid cannot make one stutter as the camera turns.
+_Avoid_: physical telescope diffraction, stellar-luminosity indicator, spikes on stars outside visible Glyphs, synchronized flashing, a whole-star brightness pulse
 
 **Sky Backdrop**:
 A single faint, camera-centred shading layer drawn behind every Celestial Map star: a near-black field with slow direction-space noise and darker wide streaks, fixed relative to sky direction rather than the camera's orientation or travel position. It supports the impression of galactic structure but never substitutes for it.

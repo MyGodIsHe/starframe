@@ -16,7 +16,7 @@ const TIER_BASE_COLOR: Record<BattleTier, [number, number, number]> = {
   2: [1, 0.4, 0.22],
   3: [1, 0.28, 0.14],
 };
-// Fixed CSS-pixel diameters (DPR-scaled at draw time, like the star field's own core/halo/diffraction
+// Fixed CSS-pixel diameters (DPR-scaled at draw time, like the star field's own core/halo
 // sprites - see CelestialStarField.tsx) rather than Three's built-in sizeAttenuation: that scales by
 // view-space depth, which is only correct for points near the optical axis and otherwise makes a
 // beacon silently shrink and fade as it drifts toward the edge of a wide-FOV view during a camera

@@ -18,11 +18,6 @@ export type RenderQuality = {
   starHaloIntensity: number;
   starHaloEdgeScaleMax: number;
   skyNoiseComplexity: number;
-  // Rare diffraction spikes on the brightest individual Celestial Map stars - see
-  // celestialStarFieldModel.ts's "Rare diffraction spikes" for what each field controls.
-  diffractionThreshold: number;
-  diffractionSpriteSize: number;
-  diffractionIntensity: number;
 };
 
 type RenderEnvironment = {
@@ -51,9 +46,6 @@ const DESKTOP_QUALITY: RenderQuality = {
   starHaloIntensity: 1,
   starHaloEdgeScaleMax: 1.8,
   skyNoiseComplexity: 3,
-  diffractionThreshold: 5.2,
-  diffractionSpriteSize: 46,
-  diffractionIntensity: 1,
 };
 
 const MOBILE_QUALITY: RenderQuality = {
@@ -76,11 +68,6 @@ const MOBILE_QUALITY: RenderQuality = {
   starHaloIntensity: 0.65,
   starHaloEdgeScaleMax: 1.45,
   skyNoiseComplexity: 1,
-  // Stricter threshold (fewer stars ever qualify) plus a smaller sprite and a softer output
-  // multiplier, instead of disabling the cue outright - see the final report for measured cost.
-  diffractionThreshold: 6,
-  diffractionSpriteSize: 30,
-  diffractionIntensity: 0.85,
 };
 
 export function selectRenderQuality({ width, devicePixelRatio, coarsePointer }: RenderEnvironment): RenderQuality {

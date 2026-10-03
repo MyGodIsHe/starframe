@@ -4,14 +4,14 @@ import { AdditiveBlending, BufferAttribute, type BufferGeometry, type Group, typ
 import { LOCAL_SYSTEM_SCENE_UNITS_PER_METER, projectLocalSystem, type LocalSystemProjection } from "./localSystemProjection";
 import { calculateOrbitTrail, type OrbitTrailPlanet } from "./orbitTrails";
 import { CelestialStarField } from "./CelestialStarField";
-import { countDiffractionCandidates, toStarFieldQualityBudget } from "./celestialStarFieldModel";
 import { SkyBackground } from "./SkyBackground";
 import { ConstellationGlyphs } from "./constellations/ConstellationGlyphs";
 import { compileConstellationGlyphIndex, projectTravelConstellationGlyphs } from "./constellations/constellationGlyphModel";
+import { GLYPH_STAR_SPIKE_COUNT } from "./constellations/glyphStarSpikes";
 import type { SystemResource, UniverseIndex } from "./universe/generateUniverse";
 import type { RenderQuality } from "./renderQuality";
 import { projectCelestialMap } from "./celestialMap";
-import { projectInterstellarPreview, projectTravelInterstellarProjection, resolveObserverPosition } from "./interstellarProjection";
+import { projectInterstellarPreview, projectTravelInterstellarProjection } from "./interstellarProjection";
 import { localDetailOpacity, travelSystemOffset, type TravelFrame } from "./travelCoordinates";
 import { FlightTrailLayer } from "./FlightTrailLayer";
 import type { AmbientFlightTrailPoint } from "./ambientFlightTrails";
@@ -91,12 +91,6 @@ export function SceneViewport({ camera, onCameraChange, star, planets, gates, ac
   const previewGate = displayGates.find((gate) => gate.id === previewGateId);
   const previewDestination = celestialMap.find((marker) => marker.id === previewSystems[0]?.id);
   const constellationGlyphIndex = useMemo(() => compileConstellationGlyphIndex(celestialSystems), [celestialSystems]);
-  // Diagnostic only (see CelestialStarField.tsx / celestialStarFieldModel.ts): confirms in tests and
-  // screenshots that density alone never creates a diffraction spike, without exposing shader state.
-  const diffractionCandidateCount = useMemo(() => {
-    const observerPosition = resolveObserverPosition(celestialSystems, activeSystemId, null, 0);
-    return observerPosition ? countDiffractionCandidates(celestialSystems, observerPosition, toStarFieldQualityBudget(quality)) : 0;
-  }, [celestialSystems, activeSystemId, quality]);
   const constellationGlyphs = useMemo(() => projectTravelConstellationGlyphs(constellationGlyphIndex, activeSystemId, travel, travel?.startedAt ?? 0), [constellationGlyphIndex, activeSystemId, travel]);
   const ambientFlightPoints: AmbientFlightTrailPoint[] = [
     ...(localSystem.star ? [{ id: `star:${localSystem.star.physical.id}`, position: [0, 0, 0] as [number, number, number] }] : []),
@@ -187,9 +181,10 @@ export function SceneViewport({ camera, onCameraChange, star, planets, gates, ac
       data-celestial-map-system-count={celestialMap.length}
       data-celestial-map-active-system={activeSystemId}
        data-celestial-map-render-profile={quality.name}
-       data-celestial-diffraction-candidate-count={diffractionCandidateCount}
            data-constellation-glyph-count={constellationGlyphs.length}
            data-constellation-glyph-ids={constellationGlyphs.map((glyph) => glyph.constellationId).join(",")}
+           data-constellation-spike-star-count={constellationGlyphs.reduce((total, glyph) => total + glyph.nodes.filter((node) => node.opacity > 0.001).length, 0)}
+           data-constellation-spikes-per-star={GLYPH_STAR_SPIKE_COUNT}
           data-celestial-preview-arc-count={previewEdges.length}
       data-jump-preview-system-ids={previewSystems.map((system) => system.id).join(",") || undefined}
          data-jump-preview-edges={previewEdges.map((edge) => edge.join(":" )).join(",") || undefined}
@@ -827,7 +822,7 @@ function CelestialMap({ systems, activeSystemId, travel, constellationGlyphIndex
 
   return (
     <group ref={sphere}>
-      <ConstellationGlyphs index={constellationGlyphIndex} activeSystemId={activeSystemId} travel={travel} glyphs={constellationGlyphs} quality={quality} />
+      <ConstellationGlyphs index={constellationGlyphIndex} activeSystemId={activeSystemId} travel={travel} glyphs={constellationGlyphs} quality={quality} reducedMotion={reducedMotion} snapshotTime={snapshotTime} />
       <BattleBeaconOverlay systems={systems} activeSystemId={activeSystemId} travel={travel} quality={quality} reducedMotion={reducedMotion} snapshotTime={snapshotTime} />
       <CelestialStarField systems={systems} activeSystemId={activeSystemId} travel={travel} quality={quality} />
       {previewArcs.map(({ edge, from, to }) => <CelestialPreviewArc from={from} to={to} leaving={previewLeaving} key={edge.join(":")} />)}

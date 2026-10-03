@@ -1,9 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { PerspectiveCamera, Vector3 } from "three";
-import { computeDiffractionIntensity, computeVisibleBrightness, toStarFieldQualityBudget } from "../src/celestialStarFieldModel";
 import { resolveObserverPosition } from "../src/interstellarProjection";
-import { selectRenderQuality } from "../src/renderQuality";
 import type { UniverseIndex } from "../src/universe/generateUniverse";
 
 const AMARR_SYSTEM_ID = 30002187;
@@ -14,14 +12,6 @@ const ELEVATION_PER_PIXEL = 0.008;
 
 function directionAzimuthElevation(direction: readonly [number, number, number]): { azimuth: number; elevation: number } {
   return { elevation: Math.asin(-direction[1]), azimuth: Math.atan2(-direction[0], -direction[2]) };
-}
-
-// The Celestial Map sphere is always camera-centred and the camera always looks at the origin, so
-// facing a given real-space direction is purely a function of camera azimuth/elevation - this
-// inverts SpaceScene.tsx's orbitCameraPosition/drag math to find the pixel drag that does it.
-function cameraDragForDirection(direction: readonly [number, number, number]): { dx: number; dy: number } {
-  const { azimuth, elevation } = directionAzimuthElevation(direction);
-  return { dx: (INITIAL_CAMERA.azimuth - azimuth) / AZIMUTH_PER_PIXEL, dy: (elevation - INITIAL_CAMERA.elevation) / ELEVATION_PER_PIXEL };
 }
 
 async function dragCameraBy(page: Page, scene: Locator, dx: number, dy: number): Promise<void> {
@@ -474,6 +464,8 @@ test("renders constellation glyphs from real stars instead of the retired marker
   const scene = page.getByRole("application");
   await expect(page.getByRole("complementary", { name: "Constellation symbol" })).toHaveCount(0);
   await expect(scene).toHaveAttribute("data-constellation-glyph-count", /[1-9]\d*/);
+  await expect(scene).toHaveAttribute("data-constellation-spike-star-count", /[1-9]\d*/);
+  await expect(scene).toHaveAttribute("data-constellation-spikes-per-star", "8");
   await expect(scene).not.toHaveAttribute("data-constellation-marker-count", /.*/);
   await expect(page).toHaveScreenshot("constellation-glyphs.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
 });
@@ -649,44 +641,7 @@ test("renders additive colored halo blending across a dense angular cluster of r
   await expect(page).toHaveScreenshot("dense-region-colored-halo.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
 });
 
-test("renders a rare bright diffraction spike only on the brightest individual stars", async ({ page }, testInfo) => {
-  await page.goto("/?snapshotTime=0");
-  const scene = page.getByRole("application");
-  await expect(scene).toHaveAttribute("data-celestial-diffraction-candidate-count", /[1-9]\d*/);
-
-  const index = await loadUniverseIndex();
-  const observer = resolveObserverPosition(index.systems, AMARR_SYSTEM_ID, null, 0)!;
-  const quality = selectRenderQuality({ width: testInfo.project.name === "mobile" ? 390 : 1400, devicePixelRatio: testInfo.project.name === "mobile" ? 3 : 1, coarsePointer: testInfo.project.name === "mobile" });
-  const budget = toStarFieldQualityBudget(quality);
-  const allDirections = index.systems
-    .filter((system) => system.id !== AMARR_SYSTEM_ID)
-    .map((system) => {
-      const offset: [number, number, number] = [system.position[0] - observer[0], system.position[1] - observer[1], system.position[2] - observer[2]];
-      const distance = Math.hypot(...offset);
-      const direction: [number, number, number] = [offset[0] / distance, offset[1] / distance, offset[2] / distance];
-      return { id: system.id, direction, intensity: computeDiffractionIntensity(computeVisibleBrightness(distance, system.radius), budget) };
-    });
-  // k-space only (id < 31,000,000): wormhole systems share one placeholder SDE direction, so their
-  // "isolation" would be meaningless. Pick the candidate with the fewest other real stars within a
-  // 4 degree cone, so its spike is easy to see on its own rather than lost in a bright cluster - the
-  // separate dense-region test above already covers density on its own never producing a spike.
-  const COS_4_DEGREES = Math.cos((4 * Math.PI) / 180);
-  const brightStar = allDirections
-    .filter((candidate) => candidate.id < 31_000_000 && candidate.intensity > 0.5 && Math.abs(directionAzimuthElevation(candidate.direction).elevation) < 1)
-    .map((candidate) => ({
-      ...candidate,
-      neighbours: allDirections.filter((other) => other.id !== candidate.id && other.direction[0] * candidate.direction[0] + other.direction[1] * candidate.direction[1] + other.direction[2] * candidate.direction[2] > COS_4_DEGREES).length,
-    }))
-    .sort((a, b) => a.neighbours - b.neighbours || a.id - b.id)[0];
-  if (!brightStar) throw new Error("No comfortably-eligible diffraction star found in the production dataset for this quality profile");
-
-  const { dx, dy } = cameraDragForDirection(brightStar.direction);
-  await dragCameraBy(page, scene, dx, dy);
-
-  await expect(page).toHaveScreenshot("diffraction-spike.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
-});
-
-test("keeps star color, brightness and diffraction continuous through an intermediate Stargate travel frame", async ({ page }) => {
+test("keeps star color, brightness and glyph spikes continuous through an intermediate Stargate travel frame", async ({ page }) => {
   await page.goto("/?snapshotTime=0");
   await page.getByRole("button", { name: "Stargate to Ashab" }).click();
 

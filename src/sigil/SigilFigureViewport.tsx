@@ -102,7 +102,7 @@ export function SigilFigureViewport({ model, camera, observer, onCameraChange, q
       >
         <color attach="background" args={["#020307"]} />
         <CameraRig camera={camera} reducedMotion={reducedMotion} />
-        <ConstellationGlyphs index={index} activeSystemId={0} travel={null} glyphs={glyphs} quality={quality} />
+        <ConstellationGlyphs index={index} activeSystemId={0} travel={null} glyphs={glyphs} quality={quality} reducedMotion={reducedMotion} snapshotTime={null} />
       </Canvas>
     </div>
   );
