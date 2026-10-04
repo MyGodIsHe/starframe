@@ -1,10 +1,23 @@
 import { describe, expect, it } from "vitest";
+import { classifyEdges, drawnEdges, type SolidPoint } from "./glyphSolid";
 import { length, subtract } from "./sigilVectors";
 import { readSigilModel } from "./sigilModel";
 import { buildQuake, QUAKE } from "./sigilQuake";
 
 const raw = buildQuake();
 const quake = readSigilModel(raw)!;
+
+// The drawing one observer is left, as a bag of lines: order is the solid's business, not the
+// figure's. `through` turns the body over as it is read, so the far side of a figure symmetric
+// through its own plane can be compared against the near side point for point.
+function strokes(observer: SolidPoint, through = 1): string[] {
+  return drawnEdges(quake.solid, observer)
+    .map((line) => [line.from, line.to]
+      .map((point) => [point[0], point[1], point[2] * through].map((value) => value.toFixed(4)).join(","))
+      .sort()
+      .join(" -> "))
+    .sort();
+}
 
 describe("buildQuake", () => {
   it("is accepted as the procedural Quake sigil", () => {
@@ -18,6 +31,17 @@ describe("buildQuake", () => {
     for (const edge of quake.solid.edges) expect(edge.faces[0]).not.toBe(edge.faces[1]);
   });
 
+  it("winds every face outwards, so the facing test works from either side", () => {
+    // The arcs are mirrored copies, which turns a body inside out unless the winding is turned back
+    // with it. A negative total says some part of the surface is reporting the wrong way round.
+    let volume = 0;
+    for (const face of quake.solid.faces) {
+      const [a, b, c] = face.vertices.map((index) => quake.solid.vertices[index]);
+      volume += (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6;
+    }
+    expect(volume).toBeGreaterThan(0);
+  });
+
   it("arrives centred with its farthest corner on the unit sphere", () => {
     expect(Math.max(...quake.solid.vertices.map(length))).toBeCloseTo(1);
     for (const axis of [0, 1, 2] as const) {
@@ -26,20 +50,54 @@ describe("buildQuake", () => {
     }
   });
 
-  it("draws an angular ring with a deliberate break around a much longer lower point", () => {
-    expect(QUAKE.outer).toHaveLength(QUAKE.inner.length);
-    expect(QUAKE.outer.length).toBeGreaterThanOrEqual(7);
-    expect(QUAKE.outer[0][1]).toBe(QUAKE.outer.at(-1)?.[1]);
-    expect(QUAKE.inner[0][1]).toBe(QUAKE.inner.at(-1)?.[1]);
-
-    const bladeBottom = Math.min(...QUAKE.blade.map((point) => point[1]));
-    const ringBottom = Math.min(...QUAKE.outer.map((point) => point[1]));
-    const ringTop = Math.max(...QUAKE.outer.map((point) => point[1]));
-    expect(ringBottom - bladeBottom).toBeGreaterThan((ringTop - ringBottom) / 2);
-    expect(raw.drawn.length).toBeGreaterThan(QUAKE.outer.length * 4);
+  it("draws the same figure from behind as from in front", () => {
+    // The body is symmetric through its own plane, so a pilot on either side must be shown the same
+    // lines. A rim marked only on the front comes out solid from one side and hollow from the other.
+    const front = strokes([0, 0, 6]);
+    const back = strokes([0, 0, -6], -1);
+    expect(front.length).toBeGreaterThan(40);
+    expect(back).toEqual(front);
   });
 
-  it("offers well-separated anchors on the crown, broken ring and piercing blade", () => {
+  it("keeps the ring in two separate arcs with the nail clear of both", () => {
+    // Three closed bodies rather than one: every edge of a figure that had grown together would
+    // border two faces of the same piece, and the two breaks would close up.
+    const bodies = (QUAKE.facets + 1) * 4;
+    const whole = quake.solid.vertices.length;
+    const part = (index: number): number => (index < bodies ? 0 : index < bodies * 2 ? 1 : 2);
+    expect(whole).toBe(bodies * 2 + (QUAKE.nail.length * 2 - 1) * 2);
+    for (const face of quake.solid.faces) expect(new Set(face.vertices.map(part)).size).toBe(1);
+  });
+
+  it("sharpens each arc towards the crown and leaves it heaviest at the foot", () => {
+    expect(QUAKE.from).toBeCloseTo(-QUAKE.to);
+    expect(QUAKE.tip).toBeLessThan(QUAKE.root / 4);
+
+    // The crown is the thin break and the foot the wide one, which is what tells this ring from a
+    // letter C: the gap left by a sharpened tip is nothing like the gap left by a cut-off end.
+    const crown = 2 * Math.sin(((90 - QUAKE.from) * Math.PI) / 180);
+    const foot = 2 * Math.sin(((90 + QUAKE.to) * Math.PI) / 180);
+    expect(crown).toBeCloseTo(foot);
+    expect(QUAKE.tip).toBeLessThan(QUAKE.root);
+  });
+
+  it("stands the nail in the lower break, reaching well past the ring", () => {
+    const point = Math.min(...QUAKE.nail.map(([, y]) => y));
+    const head = Math.max(...QUAKE.nail.map(([, y]) => y));
+    expect(point).toBeLessThan(-1);
+    expect(head).toBeLessThan(0);
+    // Past the circle the arcs are cut from, so the point is the lowest thing in the figure.
+    expect(point).toBeLessThan(-1.5);
+    expect(Math.max(...QUAKE.nail.map(([x]) => x))).toBeLessThan(1);
+  });
+
+  it("shows the nail in front of the ring rather than through it", () => {
+    const seen = classifyEdges(quake.solid, [0, 0, 6]);
+    expect(seen.filter((visibility) => visibility === "hidden").length).toBeGreaterThan(0);
+    expect(seen.filter((visibility) => visibility === "silhouette").length).toBeGreaterThan(0);
+  });
+
+  it("offers well-separated anchors on both arcs and on the nail", () => {
     expect(quake.anchors.length).toBeGreaterThanOrEqual(4);
     for (let left = 0; left < quake.anchors.length; left += 1) {
       for (let right = left + 1; right < quake.anchors.length; right += 1) {
