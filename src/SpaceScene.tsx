@@ -7,7 +7,7 @@ import { CelestialStarField } from "./CelestialStarField";
 import { BACKGROUND_STAR_DIMMING } from "./celestialStarFieldModel";
 import { SkyBackground } from "./SkyBackground";
 import { ConstellationGlyphs } from "./constellations/ConstellationGlyphs";
-import { compileConstellationGlyphIndex, projectTravelConstellationGlyphs } from "./constellations/constellationGlyphModel";
+import { compileGloballyAssignedConstellationGlyphIndex, projectTravelConstellationGlyphs } from "./constellations/constellationGlyphModel";
 import { GLYPH_STAR_SPIKE_COUNT, glyphStarDiameter } from "./constellations/glyphStarSpikes";
 import type { SystemResource, UniverseIndex } from "./universe/generateUniverse";
 import type { RenderQuality } from "./renderQuality";
@@ -93,7 +93,7 @@ export function SceneViewport({ camera, onCameraChange, star, planets, gates, ac
   const displayGates = projectGates(localSystem.gates, celestialMap);
   const previewGate = displayGates.find((gate) => gate.id === previewGateId);
   const previewDestination = celestialMap.find((marker) => marker.id === previewSystems[0]?.id);
-  const constellationGlyphIndex = useMemo(() => compileConstellationGlyphIndex(celestialSystems), [celestialSystems]);
+  const constellationGlyphIndex = useMemo(() => compileGloballyAssignedConstellationGlyphIndex(celestialSystems), [celestialSystems]);
   const constellationGlyphs = useMemo(() => projectTravelConstellationGlyphs(constellationGlyphIndex, activeSystemId, travel, travel?.startedAt ?? 0), [constellationGlyphIndex, activeSystemId, travel]);
   const ambientFlightPoints: AmbientFlightTrailPoint[] = [
     ...(localSystem.star ? [{ id: `star:${localSystem.star.physical.id}`, position: [0, 0, 0] as [number, number, number] }] : []),
@@ -832,7 +832,7 @@ function glyphReachRange(glyphs: ReturnType<typeof projectTravelConstellationGly
   return reaches.length === 0 ? "" : `${Math.min(...reaches).toFixed(2)}:${Math.max(...reaches).toFixed(2)}`;
 }
 
-function CelestialMap({ systems, activeSystemId, travel, constellationGlyphIndex, constellationGlyphs, previewEdges, previewLeaving, quality, reducedMotion, snapshotTime }: { systems: UniverseIndex["systems"]; activeSystemId: number; travel: TravelFrame | null; constellationGlyphIndex: ReturnType<typeof compileConstellationGlyphIndex>; constellationGlyphs: ReturnType<typeof projectTravelConstellationGlyphs>; previewEdges: [number, number][]; previewLeaving: boolean; quality: RenderQuality; reducedMotion: boolean; snapshotTime: number | null }): ReactNode {
+function CelestialMap({ systems, activeSystemId, travel, constellationGlyphIndex, constellationGlyphs, previewEdges, previewLeaving, quality, reducedMotion, snapshotTime }: { systems: UniverseIndex["systems"]; activeSystemId: number; travel: TravelFrame | null; constellationGlyphIndex: ReturnType<typeof compileGloballyAssignedConstellationGlyphIndex>; constellationGlyphs: ReturnType<typeof projectTravelConstellationGlyphs>; previewEdges: [number, number][]; previewLeaving: boolean; quality: RenderQuality; reducedMotion: boolean; snapshotTime: number | null }): ReactNode {
   const sphere = useRef<Group>(null);
   const projectedMarkers = useMemo(
     () => projectTravelInterstellarProjection(systems, activeSystemId, travel, travel?.startedAt ?? 0),

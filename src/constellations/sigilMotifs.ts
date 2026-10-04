@@ -1,11 +1,11 @@
 import motifTable from "../data/constellation-motifs.json" with { type: "json" };
 import { SIGIL_MODELS, type SigilModel } from "./sigilModel";
 
-// Which figure a Constellation wears, and what to call it. The authored table is generated offline
-// from each Constellation's real name and Region by scripts/generate-motifs.ts and committed, so
-// the running app never calls out to anything. A Constellation with no entry yet gets a stable
-// draw from its own id: varied and deterministic, while being honest that the choice means nothing
-// in particular until it has been authored.
+// The legacy authored preference for a Constellation and its caption. The Celestial Map now assigns
+// figures globally from co-visibility in `compileGloballyAssignedConstellationGlyphIndex`, because
+// keeping repeated figures apart is more useful than the currently empty authored table. This
+// lookup remains the deterministic seed used to discover that graph, and serves the figure workshop
+// and small standalone indexes which do not represent the whole of New Eden.
 //
 // What it draws from is the sculpted library in `sigilModel`, which is the only library there is:
 // a figure in the sky is a model somebody sculpted, the same one `/sigil.html` turns. A fresh clone

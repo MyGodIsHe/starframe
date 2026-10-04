@@ -55,8 +55,8 @@ One sculpted body from the shared library - a bolt, an atom, a ring, a hammer, a
 _Avoid_: a body built out of flat line art by rule, a shape derived from Solar System positions, a figure generated per Constellation, free rotation within the frame, a silhouette that needs fill or colour to read, a body shrunk by least squares onto the stars it happened to match, a figure centred on its matched anchors rather than on its Constellation
 
 **Sigil Motif**:
-Which Sigil Figure a Constellation wears, chosen from its real name and Region, together with the caption naming the idea.
-_Avoid_: a randomly picked figure, one figure shared by a whole Region, a choice that changes between sessions
+The one Sigil Figure a Constellation wears everywhere in New Eden. At startup, every stationary Solar System's visible glyphs form a weighted co-visibility graph: pairs seen together are neighbours, with close pairs and pairs seen from many Systems weighted most heavily. The whole Sigil Figure library colours that graph deterministically. With too few figures, unavoidable repeats are assigned to the weakest edges; adding figures can only split those conflicts until a large enough library leaves none. The assignment is global and fixed before the sky is drawn, never changed for a particular observer.
+_Avoid_: a choice per current sky, a figure that changes during travel or between sessions, random assignment, ignoring the rest of the library
 
 **Glyph Depth Cue**:
 The relative sharpness, brightness, and width of a Constellation Glyph stroke. Strokes physically nearer to the observer are brighter and overlap dimmer distant ones without changing the glyph's assigned hue; a Sigil Figure's strokes inherit the depth of the Solar Systems they run past. The same depth also sets the order Glyph Occlusion works in.

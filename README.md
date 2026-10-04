@@ -101,9 +101,10 @@ the creases sharp enough to be part of the drawing (`--crease`), and marks the
 extremities a real Solar System is meant to land on (`--anchors`). It writes
 `src/data/sigil-models/<name>.json` and refuses to write a surface that is not
 closed. Add that file to the list in `src/constellations/sigilModel.ts` - that list
-is the figure library - then check the result on `/sigil.html?figure=<name>`. Which
-Constellation wears which figure comes from `src/data/constellation-motifs.json`,
-regenerated with `scripts/generate-motifs.ts`.
+is the figure library - then check the result on `/sigil.html?figure=<name>`. At
+startup the Celestial Map assigns that whole library globally, keeping figures apart
+across all Solar-System skies; adding another model gives that assignment another
+way to separate repeats.
 
 ## Checks
 

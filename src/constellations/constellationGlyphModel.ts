@@ -4,7 +4,9 @@ import { boundsOf, centreOf, selectVisibleConstellationIds, type GlyphBounds } f
 import { buildGlyphShape, type GlyphShape } from "./glyphShape";
 import { glyphDepthSpan, glyphRelief } from "./glyphRelief";
 import { drawnEdges } from "./glyphSolid";
+import { assignGlobalSigilSlots, buildSigilConflictGraph, mergeSigilConflictGraphs } from "./sigilAssignment";
 import { figureForConstellation } from "./sigilMotifs";
+import { SIGIL_MODELS, type SigilModel } from "./sigilModel";
 
 export const CELESTIAL_MAP_RADIUS = 24;
 const DEPTH_CUE_DISTANCE = 37_840_000_000_000_000;
@@ -23,7 +25,7 @@ const COINCIDENCE_FADE_DISTANCE = 10_000_000_000_000;
 const MAX_SEGMENT_RADIANS = 0.05;
 const MAX_SEGMENTS_PER_STROKE = 12;
 
-type ConstellationSystem = {
+export type ConstellationSystem = {
   id: number;
   constellationId: number;
   position: Vector3;
@@ -32,6 +34,7 @@ type ConstellationSystem = {
 export type ConstellationGlyphIndex = {
   systemsById: ReadonlyMap<number, ConstellationSystem>;
   systemsByConstellation: ReadonlyMap<number, readonly ConstellationSystem[]>;
+  figureByConstellation: ReadonlyMap<number, SigilModel>;
   shapeByConstellation: ReadonlyMap<number, GlyphShape>;
   boundsByConstellation: ReadonlyMap<number, GlyphBounds>;
 };
@@ -85,7 +88,10 @@ export type ConstellationGlyph = {
 
 // Every glyph is built once per SDE build, in the constellation's own frame. Nothing here depends
 // on where the observer is, which is what stops a figure from redrawing itself during travel.
-export function compileConstellationGlyphIndex(systems: readonly ConstellationSystem[]): ConstellationGlyphIndex {
+export function compileConstellationGlyphIndex(
+  systems: readonly ConstellationSystem[],
+  assignedFigures: ReadonlyMap<number, SigilModel> = new Map(),
+): ConstellationGlyphIndex {
   const sortedSystems = [...systems].sort((left, right) => left.id - right.id);
   const systemsById = new Map(sortedSystems.map((system) => [system.id, system]));
   const mutableSystemsByConstellation = new Map<number, ConstellationSystem[]>();
@@ -98,9 +104,11 @@ export function compileConstellationGlyphIndex(systems: readonly ConstellationSy
 
   const shapeByConstellation = new Map<number, GlyphShape>();
   const boundsByConstellation = new Map<number, GlyphBounds>();
+  const figureByConstellation = new Map<number, SigilModel>();
 
   for (const [constellationId, members] of mutableSystemsByConstellation) {
-    const figure = figureForConstellation(constellationId);
+    const figure = assignedFigures.get(constellationId) ?? figureForConstellation(constellationId);
+    if (figure) figureByConstellation.set(constellationId, figure);
     const shape = figure && buildGlyphShape(members, figure);
     if (shape) shapeByConstellation.set(constellationId, shape);
 
@@ -118,9 +126,35 @@ export function compileConstellationGlyphIndex(systems: readonly ConstellationSy
   return {
     systemsById,
     systemsByConstellation: new Map<number, readonly ConstellationSystem[]>(mutableSystemsByConstellation),
+    figureByConstellation,
     shapeByConstellation,
     boundsByConstellation,
   };
+}
+
+// The figure is a Constellation's identity, so assignment is global rather than recomputed for the
+// current sky. We first discover which Constellations can be seen together from every Solar System,
+// then distribute the whole figure library over that graph. A figure changes a Glyph's physical
+// bounds slightly; feeding the assignment back through the index and accumulating newly discovered
+// edges closes that loop without doing any work per frame.
+export function compileGloballyAssignedConstellationGlyphIndex(systems: readonly ConstellationSystem[]): ConstellationGlyphIndex {
+  if (SIGIL_MODELS.length === 0) return compileConstellationGlyphIndex(systems);
+
+  let index = compileConstellationGlyphIndex(systems);
+  const conflicts = new Map<number, Map<number, number>>();
+
+  // One feedback pass catches pairs revealed by the first assignment while keeping startup below
+  // the cost of repeatedly chasing tiny model-to-model differences in bounding depth.
+  for (let pass = 0; pass < 2; pass += 1) {
+    const changed = mergeSigilConflictGraphs(conflicts, buildSigilConflictGraph(index.boundsByConstellation, systems));
+    if (!changed && pass > 0) break;
+
+    const slots = assignGlobalSigilSlots(conflicts, SIGIL_MODELS.length);
+    const figures = new Map([...slots].map(([constellationId, slot]) => [constellationId, SIGIL_MODELS[slot]]));
+    index = compileConstellationGlyphIndex(systems, figures);
+  }
+
+  return index;
 }
 
 export function projectConstellationGlyphs(index: ConstellationGlyphIndex, activeSystemId: number): ConstellationGlyph[] {
