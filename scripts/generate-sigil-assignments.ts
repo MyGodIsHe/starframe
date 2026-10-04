@@ -34,11 +34,19 @@ if (SIGIL_MODELS.length === 0) throw new Error("the figure library is empty");
 
 const bounds = maximumFigureBounds();
 const potential = buildPotentialSigilConflictGraph(bounds, universe.systems);
-let slots = withCalibrationFigures(assignGlobalSigilSlots(potential, SIGIL_MODELS.length));
+const locked = calibrationSlots();
+let slots = assignGlobalSigilSlots(potential, SIGIL_MODELS.length, locked);
 let best = slots;
 let bestScore = Infinity;
 
 console.log(`${edgeCount(potential)} potentially co-visible pairs`);
+const previous = previousAssignment();
+if (previous) {
+  const previousIndex = compileConstellationGlyphIndex(universe.systems, figuresFor(previous));
+  bestScore = assignmentConflictScore(buildSigilConflictGraph(previousIndex.boundsByConstellation, universe.systems), previous);
+  best = previous;
+  console.log(`previous assignment: ${Math.round(bestScore)} visible-repeat cost`);
+}
 for (let pass = 1; pass <= 6; pass += 1) {
   const index = compileConstellationGlyphIndex(universe.systems, figuresFor(slots));
   const actual = buildSigilConflictGraph(index.boundsByConstellation, universe.systems);
@@ -48,7 +56,7 @@ for (let pass = 1; pass <= 6; pass += 1) {
     best = slots;
     bestScore = score;
   }
-  const next = withCalibrationFigures(assignGlobalSigilSlots(actual, SIGIL_MODELS.length));
+  const next = assignGlobalSigilSlots(actual, SIGIL_MODELS.length, locked);
   if (sameAssignment(next, slots)) break;
   slots = next;
 }
@@ -58,13 +66,25 @@ function figuresFor(assignment: ReadonlyMap<number, number>): Map<number, SigilM
   return new Map([...assignment].map(([id, slot]) => [id, SIGIL_MODELS[slot]]));
 }
 
-function withCalibrationFigures(assignment: Map<number, number>): Map<number, number> {
+function calibrationSlots(): Map<number, number> {
+  const slots = new Map<number, number>();
   for (const [id, name] of CALIBRATION_FIGURES) {
     const slot = SIGIL_MODELS.findIndex((figure) => figure.name === name);
     if (slot < 0) throw new Error(`calibration figure ${name} is missing from the library`);
-    assignment.set(id, slot);
+    slots.set(id, slot);
   }
-  return assignment;
+  return slots;
+}
+
+function previousAssignment(): Map<number, number> | null {
+  const previous = JSON.parse(readFileSync(outputPath, "utf8")) as { assignments?: Record<string, string> };
+  const slots = new Map<number, number>();
+  for (const [key, name] of Object.entries(previous.assignments ?? {})) {
+    const slot = SIGIL_MODELS.findIndex((figure) => figure.name === name);
+    if (slot < 0) return null;
+    slots.set(Number(key), slot);
+  }
+  return slots.size === potential.size ? slots : null;
 }
 
 function sameAssignment(left: ReadonlyMap<number, number>, right: ReadonlyMap<number, number>): boolean {

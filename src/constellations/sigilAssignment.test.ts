@@ -68,4 +68,13 @@ describe("global Sigil Motif assignment", () => {
 
     expect(assignGlobalSigilSlots(conflicts, 2)).toEqual(assignGlobalSigilSlots(conflicts, 2));
   });
+
+  it("optimises around figures which another visual contract keeps fixed", () => {
+    const conflicts = graph([[1, 2, 100], [1, 3, 90], [2, 3, 1]]);
+    const assignment = assignGlobalSigilSlots(conflicts, 2, new Map([[1, 0]]));
+
+    expect(assignment.get(1)).toBe(0);
+    expect(assignment.get(2)).toBe(1);
+    expect(assignment.get(3)).toBe(1);
+  });
 });

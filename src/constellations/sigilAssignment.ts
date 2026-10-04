@@ -39,9 +39,7 @@ export function buildSigilConflictGraph(
         const left = ids[leftIndex];
         const right = ids[rightIndex];
         const separation = angularDistance(footprints.get(left)!.center, footprints.get(right)!.center);
-        const weight = 1 + (Math.PI / Math.max(separation, 1e-6)) ** 2;
-        graph.get(left)!.set(right, (graph.get(left)!.get(right) ?? 0) + weight);
-        graph.get(right)!.set(left, (graph.get(right)!.get(left) ?? 0) + weight);
+        addConflict(graph, left, right, separation);
       }
     }
   }
@@ -72,9 +70,7 @@ export function buildPotentialSigilConflictGraph(
         const left = footprints[leftIndex];
         const right = footprints[rightIndex];
         const separation = angularDistance(left.footprint.center, right.footprint.center);
-        const weight = 1 + (Math.PI / Math.max(separation, 1e-6)) ** 2;
-        graph.get(left.id)!.set(right.id, (graph.get(left.id)!.get(right.id) ?? 0) + weight);
-        graph.get(right.id)!.set(left.id, (graph.get(right.id)!.get(left.id) ?? 0) + weight);
+        addConflict(graph, left.id, right.id, separation);
       }
     }
   }
@@ -86,7 +82,11 @@ export function buildPotentialSigilConflictGraph(
 // weighted cost, so adding a figure to the library cannot make the distribution worse. When enough
 // slots exist the score reaches zero, which is an ordinary proper colouring of the co-visibility
 // graph; until then, the unavoidable repeats are pushed toward rare, widely separated pairs.
-export function assignGlobalSigilSlots(graph: SigilConflictGraph, slotCount: number): Map<number, number> {
+export function assignGlobalSigilSlots(
+  graph: SigilConflictGraph,
+  slotCount: number,
+  locked: ReadonlyMap<number, number> = new Map(),
+): Map<number, number> {
   if (slotCount < 1) throw new Error("A Sigil library needs at least one figure");
   let assignment = new Map([...graph.keys()].sort((left, right) => left - right).map((id) => [id, 0]));
 
@@ -97,6 +97,12 @@ export function assignGlobalSigilSlots(graph: SigilConflictGraph, slotCount: num
     if (assignmentConflictScore(graph, greedy) < assignmentConflictScore(graph, assignment)) assignment = greedy;
     if (assignmentConflictScore(graph, assignment) <= SCORE_EPSILON) break;
   }
+  for (const [id, slot] of locked) {
+    if (!graph.has(id)) continue;
+    if (slot < 0 || slot >= slotCount) throw new Error(`Locked Sigil slot ${slot} is outside the library`);
+    assignment.set(id, slot);
+  }
+  improveAssignment(graph, assignment, slotCount, 8, new Set(locked.keys()));
   return assignment;
 }
 
@@ -124,8 +130,14 @@ export function assignmentConflictScore(graph: SigilConflictGraph, assignment: R
   return score;
 }
 
-function improveAssignment(graph: SigilConflictGraph, assignment: Map<number, number>, slotCount: number, passLimit: number): void {
-  const ids = [...graph.keys()].sort((left, right) => left - right);
+function improveAssignment(
+  graph: SigilConflictGraph,
+  assignment: Map<number, number>,
+  slotCount: number,
+  passLimit: number,
+  locked: ReadonlySet<number> = new Set(),
+): void {
+  const ids = [...graph.keys()].filter((id) => !locked.has(id)).sort((left, right) => left - right);
   for (let pass = 0; pass < passLimit; pass += 1) {
     let moved = false;
     const conflict = new Map(ids.map((id) => [id, localConflict(graph, assignment, id, assignment.get(id)!)]));
@@ -204,4 +216,10 @@ function localConflict(graph: SigilConflictGraph, assignment: ReadonlyMap<number
 function angularDistance(left: Vector3, right: Vector3): number {
   const cosine = Math.max(-1, Math.min(1, left[0] * right[0] + left[1] * right[1] + left[2] * right[2]));
   return Math.acos(cosine);
+}
+
+function addConflict(graph: Map<number, Map<number, number>>, left: number, right: number, separation: number): void {
+  const weight = 1 + (Math.PI / Math.max(separation, 1e-6)) ** 2;
+  graph.get(left)!.set(right, (graph.get(left)!.get(right) ?? 0) + weight);
+  graph.get(right)!.set(left, (graph.get(right)!.get(left) ?? 0) + weight);
 }
