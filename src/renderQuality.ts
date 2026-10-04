@@ -13,7 +13,7 @@ export type RenderQuality = {
   maxGlowPointsPerAnchor: number;
   maxWaveShellsPerAnchor: number;
   maxBattleBeacons: number;
-  maxSkyRingEffects: number;
+  maxSkyShockwaves: number;
   starHaloMaxSize: number;
   starHaloIntensity: number;
   starHaloEdgeScaleMax: number;
@@ -41,7 +41,7 @@ const DESKTOP_QUALITY: RenderQuality = {
   maxGlowPointsPerAnchor: 40,
   maxWaveShellsPerAnchor: 5,
   maxBattleBeacons: 48,
-  maxSkyRingEffects: 12,
+  maxSkyShockwaves: 12,
   starHaloMaxSize: 26,
   starHaloIntensity: 1,
   starHaloEdgeScaleMax: 1.8,
@@ -63,7 +63,7 @@ const MOBILE_QUALITY: RenderQuality = {
   maxGlowPointsPerAnchor: 16,
   maxWaveShellsPerAnchor: 3,
   maxBattleBeacons: 24,
-  maxSkyRingEffects: 6,
+  maxSkyShockwaves: 6,
   starHaloMaxSize: 14,
   starHaloIntensity: 0.65,
   starHaloEdgeScaleMax: 1.45,

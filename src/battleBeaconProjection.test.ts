@@ -54,6 +54,14 @@ describe("projectBattleBeacons", () => {
     expect(beacon!.phase).toBe("raging");
   });
 
+  it("carries the physical observer distance a Battle Shockwave is sized from", () => {
+    const time = findRagingWindowTime(2, hotRegionId);
+    const beacon = projectBattleBeacons(systems, systems[0].position, time).find((entry) => entry.systemId === 2);
+
+    expect(beacon).toBeDefined();
+    expect(beacon!.distance).toBeCloseTo(9_460_000_000_000_000, -9);
+  });
+
   it("returns nothing when no system in view is mid-battle", () => {
     const quietTime = 0;
     const activeAtQuietTime = [1, 2, 3].some((systemId) => getBattleWindow(systemId, hotRegionId, quietTime) !== null);

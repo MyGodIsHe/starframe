@@ -7,6 +7,10 @@ export type BattleBeaconSystem = InterstellarSystem & { regionId: number };
 export type BattleBeaconMarker = {
   systemId: number;
   direction: Vector3;
+  // The same physical observer-to-system distance the Distance Cue above is computed from, carried
+  // through rather than re-measured, so that what scales a Battle Shockwave's size (see
+  // battleShockwave.ts) is this one metre count and not a second notion of distance.
+  distance: number;
   window: BattleWindow;
   tier: BattleTier;
   phase: BattlePhase;
@@ -52,6 +56,7 @@ export function projectBattleBeaconCandidates(candidates: readonly BattleBeaconC
     return [{
       systemId: marker.id,
       direction: marker.direction,
+      distance: marker.distance,
       window: entry.window,
       tier: entry.window.tier,
       phase: entry.state.phase,

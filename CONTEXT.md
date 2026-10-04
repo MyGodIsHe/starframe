@@ -115,8 +115,12 @@ The stable per-Region weighting that makes some Regions host Battle Windows far 
 _Avoid_: uniform battle frequency, per-system independent noise
 
 **Battle Beacon**:
-The Celestial Map cue for a Solar System's active Battle Window: a faint warm idle tint on its Distance Cue brightness, punctuated by a discrete flash-and-ring for each Explosion Event the System is currently hosting. Frequent overlapping flashes, not a brighter idle tint, are what read as a large battle.
+The Celestial Map cue for a Solar System's active Battle Window: a faint warm idle tint on its Distance Cue brightness, punctuated by a discrete flash and Battle Shockwave for each Explosion Event the System is currently hosting. Frequent overlapping flashes, not a brighter idle tint, are what read as a large battle.
 _Avoid_: tactical map, second distance metric, continuous flicker
+
+**Battle Shockwave**:
+How one Explosion Event's expanding shell is drawn on the sky: a decelerating front with a white-hot leading edge, the Tier colour through the body of the shell and an ember trail draining behind it, thrown slightly out of round by the wreckage it passes through. Its drawn size is what says how near the fight is — it falls off on the Distance Cue's own scale, so a battle one jump away swells across half the sky while one across the cluster stays a small ring, and the shell always reads as travelling rather than as a light being switched on.
+_Avoid_: uniform ring size for every battle, flat fill with one colour, a symmetric profile that could be closing in, expansion so fast it reads as a pop
 
 **Explosion Event**:
 A single ship's death: a deterministic, independently-timed flash, then an expanding shell, then a fading scar, generated from a Battle Window at a rate its Tier and current intensity set. The same events drive both the Battle Flare and the Battle Beacon, so what a distant Battle Beacon pulses is what a traveller finds on arrival.
