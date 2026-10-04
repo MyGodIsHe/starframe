@@ -1,11 +1,12 @@
 import motifTable from "../data/constellation-motifs.json" with { type: "json" };
+import assignmentTable from "../data/constellation-sigil-assignments.json" with { type: "json" };
 import { SIGIL_MODELS, type SigilModel } from "./sigilModel";
 
-// The legacy authored preference for a Constellation and its caption. The Celestial Map now assigns
-// figures globally from co-visibility in `compileGloballyAssignedConstellationGlyphIndex`, because
-// keeping repeated figures apart is more useful than the currently empty authored table. This
-// lookup remains the deterministic seed used to discover that graph, and serves the figure workshop
-// and small standalone indexes which do not represent the whole of New Eden.
+// The generated table gives every Constellation one global figure chosen from co-visibility across
+// all stationary Solar-System skies. It is produced offline by `generate-sigil-assignments.ts`, so
+// loading the Celestial Map only performs this lookup. The authored table remains the source of an
+// optional accessible caption; its old figure field is accepted only as a fallback for incomplete
+// generated data.
 //
 // What it draws from is the sculpted library in `sigilModel`, which is the only library there is:
 // a figure in the sky is a model somebody sculpted, the same one `/sigil.html` turns. A fresh clone
@@ -14,6 +15,13 @@ type AuthoredMotif = { figure: string; caption: string };
 
 const authored = new Map<number, { figure: SigilModel; caption: string }>();
 const modelsByName = new Map(SIGIL_MODELS.map((model) => [model.name, model]));
+const assigned = new Map<number, SigilModel>();
+
+for (const [key, name] of Object.entries((assignmentTable as { assignments: Record<string, string> }).assignments)) {
+  const constellationId = Number(key);
+  const figure = modelsByName.get(name);
+  if (Number.isInteger(constellationId) && figure) assigned.set(constellationId, figure);
+}
 
 for (const [key, entry] of Object.entries((motifTable as { motifs: Record<string, AuthoredMotif> }).motifs)) {
   const constellationId = Number(key);
@@ -24,7 +32,7 @@ for (const [key, entry] of Object.entries((motifTable as { motifs: Record<string
 
 export function figureForConstellation(constellationId: number): SigilModel | null {
   if (SIGIL_MODELS.length === 0) return null;
-  return authored.get(constellationId)?.figure ?? SIGIL_MODELS[mix(constellationId) % SIGIL_MODELS.length];
+  return assigned.get(constellationId) ?? authored.get(constellationId)?.figure ?? SIGIL_MODELS[mix(constellationId) % SIGIL_MODELS.length];
 }
 
 // The caption that lets a pilot read what the sigil is meant to be, for the accessible text beside

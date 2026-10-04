@@ -1,5 +1,5 @@
 import type { Vector3 } from "../universe/generateUniverse";
-import { computeGlyphFootprint, selectVisibleConstellationIds, type GlyphBounds } from "./glyphVisibility";
+import { computeGlyphFootprint, LEGIBILITY_FLOOR_RADIANS, selectVisibleConstellationIds, type GlyphBounds } from "./glyphVisibility";
 
 export type SigilConflictGraph = ReadonlyMap<number, ReadonlyMap<number, number>>;
 
@@ -49,25 +49,55 @@ export function buildSigilConflictGraph(
   return graph;
 }
 
+// The offline generator uses the largest bounds any figure can give each Constellation and joins
+// every pair which is simultaneously legible, before occlusion chooses a subset. This conservative
+// graph is independent of the eventual assignment and contains every pair the app can actually
+// draw together, avoiding a slow figure-assignment/occlusion fixed-point loop.
+export function buildPotentialSigilConflictGraph(
+  boundsByConstellation: ReadonlyMap<number, GlyphBounds>,
+  observers: readonly ObserverSystem[],
+): Map<number, Map<number, number>> {
+  const graph = new Map<number, Map<number, number>>(
+    [...boundsByConstellation.keys()].map((constellationId) => [constellationId, new Map()]),
+  );
+
+  for (const observer of observers) {
+    const footprints = [...boundsByConstellation].flatMap(([id, bounds]) => {
+      if (id === observer.constellationId) return [];
+      const footprint = computeGlyphFootprint(bounds, observer.position);
+      return footprint && footprint.radius >= LEGIBILITY_FLOOR_RADIANS ? [{ id, footprint }] : [];
+    });
+    for (let leftIndex = 0; leftIndex < footprints.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < footprints.length; rightIndex += 1) {
+        const left = footprints[leftIndex];
+        const right = footprints[rightIndex];
+        const separation = angularDistance(left.footprint.center, right.footprint.center);
+        const weight = 1 + (Math.PI / Math.max(separation, 1e-6)) ** 2;
+        graph.get(left.id)!.set(right.id, (graph.get(left.id)!.get(right.id) ?? 0) + weight);
+        graph.get(right.id)!.set(left.id, (graph.get(right.id)!.get(left.id) ?? 0) + weight);
+      }
+    }
+  }
+
+  return graph;
+}
+
 // Starts with one figure and opens one new slot at a time. Each accepted move strictly lowers the
 // weighted cost, so adding a figure to the library cannot make the distribution worse. When enough
 // slots exist the score reaches zero, which is an ordinary proper colouring of the co-visibility
 // graph; until then, the unavoidable repeats are pushed toward rare, widely separated pairs.
 export function assignGlobalSigilSlots(graph: SigilConflictGraph, slotCount: number): Map<number, number> {
   if (slotCount < 1) throw new Error("A Sigil library needs at least one figure");
-  const assignment = new Map([...graph.keys()].sort((left, right) => left - right).map((id) => [id, 0]));
+  let assignment = new Map([...graph.keys()].sort((left, right) => left - right).map((id) => [id, 0]));
 
   for (let available = 2; available <= slotCount; available += 1) {
     openSlot(graph, assignment, available - 1);
+    const greedy = greedyAssignment(graph, available);
+    improveAssignment(graph, greedy, available, 3);
+    if (assignmentConflictScore(graph, greedy) < assignmentConflictScore(graph, assignment)) assignment = greedy;
     if (assignmentConflictScore(graph, assignment) <= SCORE_EPSILON) break;
   }
-
-  // Opening slots one at a time guarantees that a larger library never scores worse. A weighted
-  // DSATUR pass is less conservative and usually finds a substantially better basin; keep it only
-  // when it actually beats that monotonic baseline.
-  const greedy = greedyAssignment(graph, slotCount);
-  improveAssignment(graph, greedy, slotCount, 3);
-  return assignmentConflictScore(graph, greedy) < assignmentConflictScore(graph, assignment) ? greedy : assignment;
+  return assignment;
 }
 
 // Splitting an existing colour class into a newly available slot is enough to establish the
@@ -94,24 +124,6 @@ export function assignmentConflictScore(graph: SigilConflictGraph, assignment: R
   return score;
 }
 
-export function mergeSigilConflictGraphs(target: Map<number, Map<number, number>>, source: SigilConflictGraph): boolean {
-  let changed = false;
-  for (const [left, neighbors] of source) {
-    if (!target.has(left)) {
-      target.set(left, new Map());
-      changed = true;
-    }
-    for (const [right, weight] of neighbors) {
-      const previous = target.get(left)!.get(right) ?? 0;
-      if (weight > previous + SCORE_EPSILON) {
-        target.get(left)!.set(right, weight);
-        changed = true;
-      }
-    }
-  }
-  return changed;
-}
-
 function improveAssignment(graph: SigilConflictGraph, assignment: Map<number, number>, slotCount: number, passLimit: number): void {
   const ids = [...graph.keys()].sort((left, right) => left - right);
   for (let pass = 0; pass < passLimit; pass += 1) {
@@ -126,7 +138,7 @@ function improveAssignment(graph: SigilConflictGraph, assignment: Map<number, nu
       let bestCost = currentCost;
       for (let slot = 0; slot < slotCount; slot += 1) {
         const cost = localConflict(graph, assignment, id, slot);
-        if (cost < bestCost - SCORE_EPSILON || (Math.abs(cost - bestCost) <= SCORE_EPSILON && preferredSlot(id, slotCount, slot, best))) {
+        if (cost < bestCost - SCORE_EPSILON || (Math.abs(cost - bestCost) <= SCORE_EPSILON && slot < best)) {
           best = slot;
           bestCost = cost;
         }
@@ -187,19 +199,6 @@ function localConflict(graph: SigilConflictGraph, assignment: ReadonlyMap<number
   let score = 0;
   for (const [neighbor, weight] of graph.get(id) ?? []) if (assignment.get(neighbor) === slot) score += weight;
   return score;
-}
-
-function preferredSlot(id: number, slotCount: number, candidate: number, incumbent: number): boolean {
-  const wanted = mix(id) % slotCount;
-  const distance = (slot: number) => (slot - wanted + slotCount) % slotCount;
-  return distance(candidate) < distance(incumbent);
-}
-
-function mix(value: number): number {
-  let hash = value >>> 0;
-  hash = Math.imul(hash ^ (hash >>> 16), 0x45d9f3b) >>> 0;
-  hash = Math.imul(hash ^ (hash >>> 16), 0x45d9f3b) >>> 0;
-  return (hash ^ (hash >>> 16)) >>> 0;
 }
 
 function angularDistance(left: Vector3, right: Vector3): number {

@@ -28,6 +28,7 @@
     "test": "vitest run",
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "generate:sde": "tsx scripts/generate-sde.ts",
+    "generate:sigils": "tsx scripts/generate-sigil-assignments.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

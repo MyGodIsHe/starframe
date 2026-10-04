@@ -12,7 +12,7 @@ function graph(edges: readonly (readonly [number, number, number])[]): SigilConf
   return result;
 }
 
-describe("global Sigil assignment", () => {
+describe("global Sigil Motif assignment", () => {
   it("gives a triangle three different figures when the library has room", () => {
     const conflicts = graph([[1, 2, 1], [2, 3, 1], [1, 3, 1]]);
     const assignment = assignGlobalSigilSlots(conflicts, 3);
@@ -44,6 +44,23 @@ describe("global Sigil assignment", () => {
 
     expect(scores).toEqual([...scores].sort((left, right) => right - left));
     expect(scores.at(-1)).toBe(0);
+  });
+
+  it("keeps that monotonic guarantee across varied conflict graphs", () => {
+    for (let seed = 1; seed <= 20; seed += 1) {
+      const edges: [number, number, number][] = [];
+      for (let left = 1; left <= 8; left += 1) {
+        for (let right = left + 1; right <= 8; right += 1) {
+          const value = ((left * 31 + right * 17 + seed * 13) ** 2) % 19;
+          if (value > 5) edges.push([left, right, value]);
+        }
+      }
+      const conflicts = graph(edges);
+      const scores = Array.from({ length: 8 }, (_, index) =>
+        assignmentConflictScore(conflicts, assignGlobalSigilSlots(conflicts, index + 1)),
+      );
+      expect(scores).toEqual([...scores].sort((left, right) => right - left));
+    }
   });
 
   it("is deterministic", () => {
