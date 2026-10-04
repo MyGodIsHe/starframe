@@ -1,4 +1,5 @@
 import type { ConstellationGlyph } from "../constellations/constellationGlyphModel";
+import { glyphDepthSpan, glyphRelativeDepth, glyphRelief } from "../constellations/glyphRelief";
 import { GLYPH_STAR_PREVIEW_DISTANCE } from "../constellations/glyphStarSpikes";
 import { drawnEdges, isVertexVisible, type SolidPoint } from "../constellations/glyphSolid";
 import type { SigilModel } from "../constellations/sigilModel";
@@ -31,12 +32,18 @@ export function observerPosition(azimuth: number, elevation: number, distance = 
 // Everything the renderer needs, in the shape the sky hands it: the body's visible edges as strokes
 // on the ladder, and the figure's anchors as the nodes a real Solar System would stand on.
 export function viewSigilFigure(model: SigilModel, observer: SolidPoint): ConstellationGlyph {
+  // The body's own depth, which is what Glyph Relief draws the volume from. On the sky it is
+  // measured over the figure's solids in absolute space; here there is one solid and it is the
+  // whole scene, so the measurement is the same one with nothing else in it.
+  const depthSpan = glyphDepthSpan(model.solid.vertices, observer);
   const strokes = drawnEdges(model.solid, observer).map((line) => ({
     kind: line.kind,
     from: line.from as Vector3,
     to: line.to as Vector3,
     opacity: 1,
     proximity: proximityOf(midpoint(line.from, line.to), observer),
+    reliefStart: glyphRelief(line.from, observer, depthSpan),
+    reliefEnd: glyphRelief(line.to, observer, depthSpan),
   }));
 
   // On the sky a node is a real Solar System, which is never hidden - Glyph Integrity is explicit
@@ -51,10 +58,13 @@ export function viewSigilFigure(model: SigilModel, observer: SolidPoint): Conste
       position: anchor.position as Vector3,
       opacity: 1,
       proximity: proximityOf(anchor.position, observer),
-      // An anchor is a place on a model, not a star somewhere in New Eden, so it has no distance of
-      // its own to grow or shrink by. Every one of them is drawn at the size the sky gives a star a
-      // light year out, which is what makes the page a preview of a typical one.
-      distance: GLYPH_STAR_PREVIEW_DISTANCE,
+      // An anchor is a place on a model, not a star somewhere in New Eden, so the page lends the
+      // model a physical scale instead of inventing a size: the middle of the body's own depth
+      // stands a light year out, the Distance Cue's own midpoint, and each anchor takes the
+      // distance it really has from there. So the page previews a star of ordinary size, and an
+      // anchor on the near side of the body is the larger one for the reason the sky would give -
+      // it is nearer - rather than because the relief was allowed to resize a star.
+      distance: GLYPH_STAR_PREVIEW_DISTANCE * glyphRelativeDepth(anchor.position, observer, depthSpan.middle),
     }));
 
   // The page stands one figure on its own, with no constellation to be the size of, so there is

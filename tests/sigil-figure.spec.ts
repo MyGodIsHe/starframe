@@ -74,6 +74,19 @@ test("turns to the other generated figures the library ships", async ({ page }) 
   await expect(scene).toHaveAttribute("data-sigil-outline-count", /[1-9]\d*/);
 });
 
+test("draws the body with volume, not as flat wire", async ({ page }) => {
+  await page.goto("/sigil.html");
+  const scene = page.getByRole("application");
+
+  // Glyph Relief: the near side of the body is drawn wider than its far side, and the back of it is
+  // the part that goes out of focus. One width for the whole drawing would mean a wire figure.
+  const span = (await scene.getAttribute("data-sigil-relief-span"))!.split(",").map(Number);
+
+  expect(span[0]).toBeLessThan(1);
+  expect(span[1]).toBeGreaterThan(1);
+  expect(Number(await scene.getAttribute("data-sigil-blur-max"))).toBeGreaterThan(0);
+});
+
 test("turns the figure when the observer walks round it", async ({ page }) => {
   await page.goto("/sigil.html");
   const scene = page.getByRole("application");

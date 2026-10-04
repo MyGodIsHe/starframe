@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { glyphStrokeBlur, glyphStrokeWidthScale } from "../constellations/glyphRelief";
+import { GLYPH_STAR_PREVIEW_DISTANCE, glyphStarDiameter } from "../constellations/glyphStarSpikes";
 import { readSigilModel, type SigilModel } from "../constellations/sigilModel";
 import { observerPosition, proximityOf, viewSigilFigure } from "./sigilFigureView";
 
@@ -74,6 +76,37 @@ describe("viewSigilFigure", () => {
     expect(Math.max(...counts)).toBeLessThanOrEqual(figure.anchors.length);
     expect(Math.min(...counts)).toBeLessThan(figure.anchors.length);
     expect(Math.max(...counts)).toBeGreaterThan(0);
+  });
+
+  it("draws the body with volume: a nearer end of an edge is wider than a further one", () => {
+    const strokes = viewSigilFigure(figure, observerPosition(0.6, 0.2)).strokes;
+    const widths = strokes.flatMap((stroke) => [glyphStrokeWidthScale(stroke.reliefStart), glyphStrokeWidthScale(stroke.reliefEnd)]);
+
+    expect(Math.max(...widths)).toBeGreaterThan(1);
+    expect(Math.min(...widths)).toBeLessThan(1);
+    // An edge of a box runs away from the observer, so the taper has to run along a single stroke
+    // as well as between one stroke and another - otherwise the drawing is flat art in layers.
+    expect(strokes.some((stroke) => Math.abs(glyphStrokeWidthScale(stroke.reliefStart) - glyphStrokeWidthScale(stroke.reliefEnd)) > 0.05)).toBe(true);
+  });
+
+  it("holds the near side of the body in focus and softens what is behind it", () => {
+    const strokes = viewSigilFigure(figure, observerPosition(0.6, 0.2)).strokes;
+    const blurs = strokes.flatMap((stroke) => [glyphStrokeBlur(stroke.reliefStart), glyphStrokeBlur(stroke.reliefEnd)]);
+
+    expect(Math.min(...blurs)).toBe(0);
+    expect(Math.max(...blurs)).toBeGreaterThan(0);
+  });
+
+  it("stands every anchor at the distance it really has, so a nearer one is drawn larger", () => {
+    const distances = viewSigilFigure(figure, observerPosition(0.6, 0.2)).nodes.map((node) => node.distance);
+    const near = Math.min(...distances);
+    const far = Math.max(...distances);
+
+    // The middle of the body stands at the preview distance, so the anchors fall either side of it
+    // and Glyph Star Size - the sky's own rule, from distance alone - sizes them from there.
+    expect(near).toBeLessThan(GLYPH_STAR_PREVIEW_DISTANCE);
+    expect(far).toBeGreaterThan(GLYPH_STAR_PREVIEW_DISTANCE);
+    expect(glyphStarDiameter(near, "desktop")).toBeGreaterThan(glyphStarDiameter(far, "desktop"));
   });
 
   it("gives the same drawing for the same observer, whatever happened in between", () => {

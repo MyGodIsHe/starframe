@@ -65,6 +65,25 @@ describe("projectConstellationGlyphs", () => {
     expect(strokes.some((stroke) => stroke.capStart === true && stroke.capEnd === true)).toBe(true);
   });
 
+  it("hands every figure its own depth, so a body is drawn with the volume it has", () => {
+    const index = compileConstellationGlyphIndex(UNIVERSE_SYSTEMS);
+    const glyphs = projectConstellationGlyphs(index, UNIVERSE_SYSTEMS[0].id).filter((glyph) => glyph.strokes.length > 0);
+
+    expect(glyphs.length).toBeGreaterThan(0);
+    for (const glyph of glyphs) {
+      const relief = glyph.strokes.flatMap((stroke) => [stroke.reliefStart, stroke.reliefEnd]);
+      // A figure has a near side and a far side, and it spends the ladder on them: something of it
+      // is drawn at the front of its own depth and something well behind that. The outline is where
+      // the body turns away, so nothing reaches the very back - that is the hidden side.
+      expect(Math.max(...relief)).toBeGreaterThan(0.8);
+      expect(Math.min(...relief)).toBeLessThan(0.5);
+      for (const value of relief) {
+        expect(value).toBeGreaterThanOrEqual(0);
+        expect(value).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
   it("does not draw ties from sigils to their constellation stars", () => {
     const index = compileConstellationGlyphIndex(UNIVERSE_SYSTEMS);
     const strokes = projectConstellationGlyphs(index, UNIVERSE_SYSTEMS[0].id).flatMap((glyph) => glyph.strokes);

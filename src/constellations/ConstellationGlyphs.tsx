@@ -7,6 +7,7 @@ import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js
 import type { RenderQuality } from "../renderQuality";
 import { SCENE_PALETTE } from "../scenePalette";
 import { glyphBucketStyles, glyphStrokeIntensity, writeGlyphColor, GLYPH_BUCKET_BY_KIND, GLYPH_BUCKET_COUNT } from "./glyphLineStyle";
+import { GLYPH_RELIEF_BLUR_GAIN, GLYPH_RELIEF_BLUR_MAX, GLYPH_RELIEF_FOCUS_DEPTH, GLYPH_RELIEF_WIDTH_MAX, GLYPH_RELIEF_WIDTH_MIN } from "./glyphRelief";
 import { TRAVEL_DURATION, type TravelFrame } from "../travelCoordinates";
 import { assignGlyphColors } from "./glyphColoring";
 import {
@@ -39,6 +40,8 @@ type GlyphLineBucket = {
   opacityEnd: InstancedBufferAttribute;
   capStart: InstancedBufferAttribute;
   capEnd: InstancedBufferAttribute;
+  reliefStart: InstancedBufferAttribute;
+  reliefEnd: InstancedBufferAttribute;
 };
 
 type GlyphNodes = {
@@ -332,16 +335,22 @@ function createLineBucket(capacity: number, outerWidth: number, haloWidth: numbe
   const opacityEnd = new InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(DynamicDrawUsage);
   const capStart = new InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(DynamicDrawUsage);
   const capEnd = new InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(DynamicDrawUsage);
+  // Relief is per end rather than per stroke, so an edge running away from the observer narrows and
+  // softens along its own length instead of jumping a step at every joint.
+  const reliefStart = new InstancedBufferAttribute(new Float32Array(capacity).fill(0.5), 1).setUsage(DynamicDrawUsage);
+  const reliefEnd = new InstancedBufferAttribute(new Float32Array(capacity).fill(0.5), 1).setUsage(DynamicDrawUsage);
   geometry.setAttribute("instanceOpacityStart", opacityStart);
   geometry.setAttribute("instanceOpacityEnd", opacityEnd);
   geometry.setAttribute("instanceCapStart", capStart);
   geometry.setAttribute("instanceCapEnd", capEnd);
+  geometry.setAttribute("instanceReliefStart", reliefStart);
+  geometry.setAttribute("instanceReliefEnd", reliefEnd);
   geometry.instanceCount = 0;
 
   const outer = createLineObject(geometry, outerWidth, outerOpacity, AdditiveBlending, renderOrder, 1.2, 0);
   const halo = createLineObject(geometry, haloWidth, haloOpacity, AdditiveBlending, renderOrder + 1, 1.5, 0.04);
   const core = createLineObject(geometry, coreWidth, coreOpacity, NormalBlending, renderOrder + 2, null, 0.58);
-  return { geometry, objects: [outer, halo, core], outerOpacity, haloOpacity, positions, colors, opacityStart, opacityEnd, capStart, capEnd };
+  return { geometry, objects: [outer, halo, core], outerOpacity, haloOpacity, positions, colors, opacityStart, opacityEnd, capStart, capEnd, reliefStart, reliefEnd };
 }
 
 function createLineObject(geometry: LineSegmentsGeometry, linewidth: number, opacity: number, blending: typeof AdditiveBlending | typeof NormalBlending, renderOrder: number, glowFalloff: number | null, whiten: number): LineSegments2 {
@@ -363,19 +372,43 @@ function createLineObject(geometry: LineSegmentsGeometry, linewidth: number, opa
   return object;
 }
 
+// Glyph Relief as the line shader sees it. Both terms mirror `glyphRelief` exactly, which is what
+// lets the taper and the defocus be reasoned about and tested off the GPU.
+const RELIEF_GLSL = `
+            float glyphWidthScale(float relief) {
+              return mix(${GLYPH_RELIEF_WIDTH_MIN.toFixed(3)}, ${GLYPH_RELIEF_WIDTH_MAX.toFixed(3)}, clamp(relief, 0.0, 1.0));
+            }
+
+            float glyphBlur(float relief) {
+              return clamp((${GLYPH_RELIEF_FOCUS_DEPTH.toFixed(3)} - relief) * ${GLYPH_RELIEF_BLUR_GAIN.toFixed(3)}, 0.0, ${GLYPH_RELIEF_BLUR_MAX.toFixed(3)});
+            }`;
+
+// The softest edge a stroke in focus still gets, as a fraction of its half-width. A hard edge on a
+// core line barely a pixel across breaks into dots as the camera turns, and this is narrow enough
+// that nothing but that is lost.
+const CRISP_EDGE = 0.06;
+
 function addNeonProfile(material: LineMaterial, glowFalloff: number | null, whiten: number): void {
-  const profile = glowFalloff === null ? "" : `
-            float glyphDistance = length(vec2(vUv.x, glyphCapDistance));
-            alpha *= pow(max(0.0, 1.0 - glyphDistance), ${glowFalloff.toFixed(1)});`;
+  // Defocus flattens a glow instead of narrowing it: the same light over more of the stroke's
+  // width, dimmer in the middle and still there at the edge. What it takes away first is the crisp
+  // thread down the centre, so the core loses its hard edge and some of its light while the glow
+  // around it keeps nearly all of its own.
+  const profile = glowFalloff === null ? `
+            alpha *= (1.0 - smoothstep(1.0 - max(glyphBlurAmount, ${CRISP_EDGE.toFixed(2)}), 1.0, glyphAcross)) * (1.0 - glyphBlurAmount * 0.45);` : `
+            alpha *= pow(max(0.0, 1.0 - glyphAcross), ${glowFalloff.toFixed(1)} * (1.0 - glyphBlurAmount * 0.5)) * (1.0 - glyphBlurAmount * 0.3);`;
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
-      .replace("attribute vec3 instanceEnd;", "attribute vec3 instanceEnd;\nattribute float instanceOpacityStart;\nattribute float instanceOpacityEnd;\nattribute float instanceCapStart;\nattribute float instanceCapEnd;\nvarying float vGlyphOpacity;\nvarying vec2 vGlyphCaps;")
-      .replace("void main() {\n\n\t\t\t#ifdef USE_COLOR", "void main() {\n\n\t\t\tvGlyphOpacity = ( position.y < 0.5 ) ? instanceOpacityStart : instanceOpacityEnd;\n\t\t\tvGlyphCaps = vec2(instanceCapStart, instanceCapEnd);\n\n\t\t\t#ifdef USE_COLOR");
+      .replace("attribute vec3 instanceEnd;", `attribute vec3 instanceEnd;\nattribute float instanceOpacityStart;\nattribute float instanceOpacityEnd;\nattribute float instanceCapStart;\nattribute float instanceCapEnd;\nattribute float instanceReliefStart;\nattribute float instanceReliefEnd;\nvarying float vGlyphOpacity;\nvarying vec2 vGlyphCaps;\nvarying float vGlyphRelief;${RELIEF_GLSL}`)
+      .replace("void main() {\n\n\t\t\t#ifdef USE_COLOR", "void main() {\n\n\t\t\tvGlyphOpacity = ( position.y < 0.5 ) ? instanceOpacityStart : instanceOpacityEnd;\n\t\t\tvGlyphCaps = vec2(instanceCapStart, instanceCapEnd);\n\t\t\tvGlyphRelief = ( position.y < 0.5 ) ? instanceReliefStart : instanceReliefEnd;\n\n\t\t\t#ifdef USE_COLOR")
+      // Each end of a segment is widened by its own relief, so the quad tapers along the edge just
+      // as the edge recedes. The cap extension is already folded into this offset, which is what
+      // keeps a cap the size of the end it closes.
+      .replace("offset *= linewidth;", "offset *= linewidth * glyphWidthScale(vGlyphRelief);");
     shader.fragmentShader = shader.fragmentShader
-      .replace("void main() {\n\n\t\t\tfloat alpha = opacity;", "varying float vGlyphOpacity;\nvarying vec2 vGlyphCaps;\n\n\t\tvoid main() {\n\n\t\t\tfloat alpha = opacity;")
-      .replace("\t\t\tgl_FragColor = vec4( diffuseColor.rgb, alpha );", `            if (vUv.y < -1.0 && vGlyphCaps.x < 0.5) discard;\n            if (vUv.y > 1.0 && vGlyphCaps.y < 0.5) discard;\n            float glyphCapDistance = max(abs(vUv.y) - 1.0, 0.0);${profile}\n            alpha *= vGlyphOpacity;\n            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), ${whiten.toFixed(2)});\n\t\t\tgl_FragColor = vec4( diffuseColor.rgb, alpha );`);
+      .replace("void main() {\n\n\t\t\tfloat alpha = opacity;", `varying float vGlyphOpacity;\nvarying vec2 vGlyphCaps;\nvarying float vGlyphRelief;${RELIEF_GLSL}\n\n\t\tvoid main() {\n\n\t\t\tfloat alpha = opacity;`)
+      .replace("\t\t\tgl_FragColor = vec4( diffuseColor.rgb, alpha );", `            if (vUv.y < -1.0 && vGlyphCaps.x < 0.5) discard;\n            if (vUv.y > 1.0 && vGlyphCaps.y < 0.5) discard;\n            float glyphCapDistance = max(abs(vUv.y) - 1.0, 0.0);\n            float glyphAcross = length(vec2(vUv.x, glyphCapDistance));\n            float glyphBlurAmount = glyphBlur(vGlyphRelief);${profile}\n            alpha *= vGlyphOpacity;\n            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), ${whiten.toFixed(2)});\n\t\t\tgl_FragColor = vec4( diffuseColor.rgb, alpha );`);
   };
-  material.customProgramCacheKey = () => `constellation-glyph-neon-v2-${glowFalloff ?? "core"}-${whiten}`;
+  material.customProgramCacheKey = () => `constellation-glyph-relief-v1-${glowFalloff ?? "core"}-${whiten}`;
 }
 
 function updateGlowBreathing(state: GlyphRenderState, elapsedSeconds: number): void {
@@ -449,6 +482,8 @@ function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: Glyph
       bucket.opacityEnd.setX(strokeIndex, intensity);
       bucket.capStart.setX(strokeIndex, stroke.capStart === false ? 0 : 1);
       bucket.capEnd.setX(strokeIndex, stroke.capEnd === false ? 0 : 1);
+      bucket.reliefStart.setX(strokeIndex, stroke.reliefStart);
+      bucket.reliefEnd.setX(strokeIndex, stroke.reliefEnd);
       strokeCounts[bucketIndex] += 1;
     }
 
@@ -473,6 +508,8 @@ function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: Glyph
     bucket.opacityEnd.needsUpdate = true;
     bucket.capStart.needsUpdate = true;
     bucket.capEnd.needsUpdate = true;
+    bucket.reliefStart.needsUpdate = true;
+    bucket.reliefEnd.needsUpdate = true;
   }
 
   state.nodes.geometry.instanceCount = nodeCount;
@@ -510,10 +547,14 @@ function resizeLineBucket(bucket: GlyphLineBucket, capacity: number): void {
   bucket.opacityEnd = new InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(DynamicDrawUsage);
   bucket.capStart = new InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(DynamicDrawUsage);
   bucket.capEnd = new InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(DynamicDrawUsage);
+  bucket.reliefStart = new InstancedBufferAttribute(new Float32Array(capacity).fill(0.5), 1).setUsage(DynamicDrawUsage);
+  bucket.reliefEnd = new InstancedBufferAttribute(new Float32Array(capacity).fill(0.5), 1).setUsage(DynamicDrawUsage);
   bucket.geometry.setAttribute("instanceOpacityStart", bucket.opacityStart);
   bucket.geometry.setAttribute("instanceOpacityEnd", bucket.opacityEnd);
   bucket.geometry.setAttribute("instanceCapStart", bucket.capStart);
   bucket.geometry.setAttribute("instanceCapEnd", bucket.capEnd);
+  bucket.geometry.setAttribute("instanceReliefStart", bucket.reliefStart);
+  bucket.geometry.setAttribute("instanceReliefEnd", bucket.reliefEnd);
 }
 
 function resizeNodes(nodes: GlyphNodes, capacity: number): void {

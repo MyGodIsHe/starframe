@@ -2,6 +2,7 @@ import { travelSkyProgress, type TravelFrame } from "../travelCoordinates";
 import type { Vector3 } from "../universe/generateUniverse";
 import { boundsOf, centreOf, selectVisibleConstellationIds, type GlyphBounds } from "./glyphVisibility";
 import { buildGlyphShape, type GlyphShape } from "./glyphShape";
+import { glyphDepthSpan, glyphRelief } from "./glyphRelief";
 import { drawnEdges } from "./glyphSolid";
 import { figureForConstellation } from "./sigilMotifs";
 
@@ -55,6 +56,14 @@ export type ConstellationGlyphStroke = {
   to: Vector3;
   opacity: number;
   proximity: number;
+  /**
+   * Where each end of this stroke stands through the figure's own depth: 1 at the body's nearest
+   * point to the observer and 0 at its farthest. The two ends are kept apart because an edge
+   * running away from the observer tapers along its own length, and that taper is most of what
+   * reads as volume. See `glyphRelief`.
+   */
+  reliefStart: number;
+  reliefEnd: number;
   /** False where this segment joins the previous part of the same projected stroke. */
   capStart?: boolean;
   /** False where this segment joins the next part of the same projected stroke. */
@@ -197,6 +206,9 @@ function projectShape(
 ): ConstellationGlyphStroke[] {
   const samples = systems.map((system, index) => ({ position: system.position, proximity: nodes[index].proximity }));
   const strokes: ConstellationGlyphStroke[] = [];
+  // The whole figure is one body, so its relief is measured against the depth of all of it at once
+  // rather than per solid: a gear's hub and its teeth are the same object seen from one place.
+  const depthSpan = glyphDepthSpan(shape.solids.flatMap((solid) => solid.vertices), observerPosition);
 
   const emit = (kind: ConstellationGlyphStroke["kind"], from: Vector3, to: Vector3): void => {
     const segments = segmentCount(direction(from, observerPosition), direction(to, observerPosition));
@@ -209,6 +221,10 @@ function projectShape(
         to: onCelestialSphere(end, observerPosition),
         opacity,
         proximity: (sampleProximity(samples, start) + sampleProximity(samples, end)) / 2,
+        // Measured where the line really is, not where it was projected to: every point of a glyph
+        // lands on one sphere, so the sphere has nothing left to say about which end is nearer.
+        reliefStart: glyphRelief(start, observerPosition, depthSpan),
+        reliefEnd: glyphRelief(end, observerPosition, depthSpan),
         capStart: step === 0,
         capEnd: step === segments - 1,
       });

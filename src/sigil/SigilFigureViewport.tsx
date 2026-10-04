@@ -3,6 +3,7 @@ import { type PointerEvent, type ReactNode, type WheelEvent, useLayoutEffect, us
 import { Vector3 } from "three";
 import { ConstellationGlyphs } from "../constellations/ConstellationGlyphs";
 import { compileConstellationGlyphIndex } from "../constellations/constellationGlyphModel";
+import { glyphStrokeBlur, glyphStrokeWidthScale } from "../constellations/glyphRelief";
 import type { SolidPoint } from "../constellations/glyphSolid";
 import type { SigilModel } from "../constellations/sigilModel";
 import type { RenderQuality } from "../renderQuality";
@@ -40,6 +41,11 @@ export function SigilFigureViewport({ model, camera, observer, onCameraChange, q
   // from a quarter turn away - and this is the same measurement a viewer makes by eye: the drawing
   // got longer or shorter.
   const drawnLength = glyph.strokes.reduce((total, stroke) => total + Math.hypot(stroke.to[0] - stroke.from[0], stroke.to[1] - stroke.from[1], stroke.to[2] - stroke.from[2]), 0);
+  // What Glyph Relief made of the body: the width the nearest and the farthest end of the drawing
+  // came out at, and how far out of focus its back went. Published rather than screenshotted,
+  // because volume is a claim about numbers the renderer was handed and not about pixels.
+  const widths = glyph.strokes.flatMap((stroke) => [glyphStrokeWidthScale(stroke.reliefStart), glyphStrokeWidthScale(stroke.reliefEnd)]);
+  const blurs = glyph.strokes.flatMap((stroke) => [glyphStrokeBlur(stroke.reliefStart), glyphStrokeBlur(stroke.reliefEnd)]);
 
   function startDrag(event: PointerEvent<Element>): void {
     dragStart.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, camera };
@@ -77,6 +83,8 @@ export function SigilFigureViewport({ model, camera, observer, onCameraChange, q
       data-sigil-stroke-count={glyph.strokes.length}
       data-sigil-outline-count={outline}
       data-sigil-line-length={drawnLength.toFixed(3)}
+      data-sigil-relief-span={widths.length === 0 ? undefined : `${Math.min(...widths).toFixed(3)},${Math.max(...widths).toFixed(3)}`}
+      data-sigil-blur-max={blurs.length === 0 ? undefined : Math.max(...blurs).toFixed(3)}
       data-sigil-anchors-in-sight={glyph.nodes.length}
       data-sigil-observer={observer.map((value) => value.toFixed(3)).join(",")}
       onWheel={zoom}
