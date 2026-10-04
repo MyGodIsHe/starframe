@@ -42,9 +42,9 @@ depth by rule, and every such rule is a guess about a shape nobody drew.
 A fresh clone has fifteen figures, and every Constellation wears one of them. All
 fifteen are generated, because each is a subject a rule describes exactly rather than
 approximately. The ring in `src/constellations/sigilRing.ts` is two radii and two
-counts. The atom in `src/constellations/sigilAtom.ts` is a core and two shells built
-out of that same tube, set square to each other so they cross at the widest angle
-they can from whatever side an observer stands on, with its anchors where an
+counts. The atom in `src/constellations/sigilAtom.ts` is a core and three shells built
+out of that same tube, set in the three mutually perpendicular principal planes so
+they cross at the widest angle they can, with its anchors where an
 electron would be. The bolt in `src/constellations/sigilBolt.ts` is two wedges meeting
 along a crossbar, each running from a point out to its elbow, with the corner at
 each elbow worked out as the mitre between them. Its section is a diamond, so a

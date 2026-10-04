@@ -42,6 +42,7 @@ type GlyphLineBucket = {
   capEnd: InstancedBufferAttribute;
   reliefStart: InstancedBufferAttribute;
   reliefEnd: InstancedBufferAttribute;
+  pen: InstancedBufferAttribute;
 };
 
 type GlyphNodes = {
@@ -339,18 +340,22 @@ function createLineBucket(capacity: number, outerWidth: number, haloWidth: numbe
   // softens along its own length instead of jumping a step at every joint.
   const reliefStart = new InstancedBufferAttribute(new Float32Array(capacity).fill(0.5), 1).setUsage(DynamicDrawUsage);
   const reliefEnd = new InstancedBufferAttribute(new Float32Array(capacity).fill(0.5), 1).setUsage(DynamicDrawUsage);
+  // The Glyph Pen is one number for a whole glyph, but strokes from every glyph on the sky share
+  // these buckets, so it travels per instance rather than as a uniform.
+  const pen = new InstancedBufferAttribute(new Float32Array(capacity).fill(1), 1).setUsage(DynamicDrawUsage);
   geometry.setAttribute("instanceOpacityStart", opacityStart);
   geometry.setAttribute("instanceOpacityEnd", opacityEnd);
   geometry.setAttribute("instanceCapStart", capStart);
   geometry.setAttribute("instanceCapEnd", capEnd);
   geometry.setAttribute("instanceReliefStart", reliefStart);
   geometry.setAttribute("instanceReliefEnd", reliefEnd);
+  geometry.setAttribute("instancePen", pen);
   geometry.instanceCount = 0;
 
   const outer = createLineObject(geometry, outerWidth, outerOpacity, AdditiveBlending, renderOrder, 1.2, 0);
   const halo = createLineObject(geometry, haloWidth, haloOpacity, AdditiveBlending, renderOrder + 1, 1.5, 0.04);
   const core = createLineObject(geometry, coreWidth, coreOpacity, NormalBlending, renderOrder + 2, null, 0.58);
-  return { geometry, objects: [outer, halo, core], outerOpacity, haloOpacity, positions, colors, opacityStart, opacityEnd, capStart, capEnd, reliefStart, reliefEnd };
+  return { geometry, objects: [outer, halo, core], outerOpacity, haloOpacity, positions, colors, opacityStart, opacityEnd, capStart, capEnd, reliefStart, reliefEnd, pen };
 }
 
 function createLineObject(geometry: LineSegmentsGeometry, linewidth: number, opacity: number, blending: typeof AdditiveBlending | typeof NormalBlending, renderOrder: number, glowFalloff: number | null, whiten: number): LineSegments2 {
@@ -398,17 +403,18 @@ function addNeonProfile(material: LineMaterial, glowFalloff: number | null, whit
             alpha *= pow(max(0.0, 1.0 - glyphAcross), ${glowFalloff.toFixed(1)} * (1.0 - glyphBlurAmount * 0.5)) * (1.0 - glyphBlurAmount * 0.3);`;
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
-      .replace("attribute vec3 instanceEnd;", `attribute vec3 instanceEnd;\nattribute float instanceOpacityStart;\nattribute float instanceOpacityEnd;\nattribute float instanceCapStart;\nattribute float instanceCapEnd;\nattribute float instanceReliefStart;\nattribute float instanceReliefEnd;\nvarying float vGlyphOpacity;\nvarying vec2 vGlyphCaps;\nvarying float vGlyphRelief;${RELIEF_GLSL}`)
+      .replace("attribute vec3 instanceEnd;", `attribute vec3 instanceEnd;\nattribute float instanceOpacityStart;\nattribute float instanceOpacityEnd;\nattribute float instanceCapStart;\nattribute float instanceCapEnd;\nattribute float instanceReliefStart;\nattribute float instanceReliefEnd;\nattribute float instancePen;\nvarying float vGlyphOpacity;\nvarying vec2 vGlyphCaps;\nvarying float vGlyphRelief;${RELIEF_GLSL}`)
       .replace("void main() {\n\n\t\t\t#ifdef USE_COLOR", "void main() {\n\n\t\t\tvGlyphOpacity = ( position.y < 0.5 ) ? instanceOpacityStart : instanceOpacityEnd;\n\t\t\tvGlyphCaps = vec2(instanceCapStart, instanceCapEnd);\n\t\t\tvGlyphRelief = ( position.y < 0.5 ) ? instanceReliefStart : instanceReliefEnd;\n\n\t\t\t#ifdef USE_COLOR")
       // Each end of a segment is widened by its own relief, so the quad tapers along the edge just
       // as the edge recedes. The cap extension is already folded into this offset, which is what
-      // keeps a cap the size of the end it closes.
-      .replace("offset *= linewidth;", "offset *= linewidth * glyphWidthScale(vGlyphRelief);");
+      // keeps a cap the size of the end it closes. The Glyph Pen multiplies both: relief says which
+      // side of its own body a line is on, the pen how large the whole body stands on the sky.
+      .replace("offset *= linewidth;", "offset *= linewidth * glyphWidthScale(vGlyphRelief) * instancePen;");
     shader.fragmentShader = shader.fragmentShader
       .replace("void main() {\n\n\t\t\tfloat alpha = opacity;", `varying float vGlyphOpacity;\nvarying vec2 vGlyphCaps;\nvarying float vGlyphRelief;${RELIEF_GLSL}\n\n\t\tvoid main() {\n\n\t\t\tfloat alpha = opacity;`)
       .replace("\t\t\tgl_FragColor = vec4( diffuseColor.rgb, alpha );", `            if (vUv.y < -1.0 && vGlyphCaps.x < 0.5) discard;\n            if (vUv.y > 1.0 && vGlyphCaps.y < 0.5) discard;\n            float glyphCapDistance = max(abs(vUv.y) - 1.0, 0.0);\n            float glyphAcross = length(vec2(vUv.x, glyphCapDistance));\n            float glyphBlurAmount = glyphBlur(vGlyphRelief);${profile}\n            alpha *= vGlyphOpacity;\n            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), ${whiten.toFixed(2)});\n\t\t\tgl_FragColor = vec4( diffuseColor.rgb, alpha );`);
   };
-  material.customProgramCacheKey = () => `constellation-glyph-relief-v1-${glowFalloff ?? "core"}-${whiten}`;
+  material.customProgramCacheKey = () => `constellation-glyph-relief-v2-${glowFalloff ?? "core"}-${whiten}`;
 }
 
 function updateGlowBreathing(state: GlyphRenderState, elapsedSeconds: number): void {
@@ -484,6 +490,7 @@ function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: Glyph
       bucket.capEnd.setX(strokeIndex, stroke.capEnd === false ? 0 : 1);
       bucket.reliefStart.setX(strokeIndex, stroke.reliefStart);
       bucket.reliefEnd.setX(strokeIndex, stroke.reliefEnd);
+      bucket.pen.setX(strokeIndex, glyph.pen);
       strokeCounts[bucketIndex] += 1;
     }
 
@@ -510,6 +517,7 @@ function syncGlyphRenderData(glyphs: readonly ConstellationGlyph[], state: Glyph
     bucket.capEnd.needsUpdate = true;
     bucket.reliefStart.needsUpdate = true;
     bucket.reliefEnd.needsUpdate = true;
+    bucket.pen.needsUpdate = true;
   }
 
   state.nodes.geometry.instanceCount = nodeCount;
@@ -549,12 +557,14 @@ function resizeLineBucket(bucket: GlyphLineBucket, capacity: number): void {
   bucket.capEnd = new InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(DynamicDrawUsage);
   bucket.reliefStart = new InstancedBufferAttribute(new Float32Array(capacity).fill(0.5), 1).setUsage(DynamicDrawUsage);
   bucket.reliefEnd = new InstancedBufferAttribute(new Float32Array(capacity).fill(0.5), 1).setUsage(DynamicDrawUsage);
+  bucket.pen = new InstancedBufferAttribute(new Float32Array(capacity).fill(1), 1).setUsage(DynamicDrawUsage);
   bucket.geometry.setAttribute("instanceOpacityStart", bucket.opacityStart);
   bucket.geometry.setAttribute("instanceOpacityEnd", bucket.opacityEnd);
   bucket.geometry.setAttribute("instanceCapStart", bucket.capStart);
   bucket.geometry.setAttribute("instanceCapEnd", bucket.capEnd);
   bucket.geometry.setAttribute("instanceReliefStart", bucket.reliefStart);
   bucket.geometry.setAttribute("instanceReliefEnd", bucket.reliefEnd);
+  bucket.geometry.setAttribute("instancePen", bucket.pen);
 }
 
 function resizeNodes(nodes: GlyphNodes, capacity: number): void {

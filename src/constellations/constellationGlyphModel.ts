@@ -1,15 +1,41 @@
+import { DISTANCE_CUE_DISTANCE } from "../interstellarProjection";
 import { travelSkyProgress, type TravelFrame } from "../travelCoordinates";
 import type { Vector3 } from "../universe/generateUniverse";
-import { boundsOf, centreOf, selectVisibleConstellationIds, type GlyphBounds } from "./glyphVisibility";
+import { boundsOf, centreOf, computeGlyphFootprint, selectVisibleConstellationIds, type GlyphBounds } from "./glyphVisibility";
 import { buildGlyphShape, type GlyphShape } from "./glyphShape";
+import { glyphPenScale } from "./glyphLineStyle";
 import { glyphDepthSpan, glyphRelief } from "./glyphRelief";
 import { drawnEdges } from "./glyphSolid";
 import { figureForConstellation } from "./sigilMotifs";
 import type { SigilModel } from "./sigilModel";
 
 export const CELESTIAL_MAP_RADIUS = 24;
-const DEPTH_CUE_DISTANCE = 37_840_000_000_000_000;
 const MIN_VISIBLE_OPACITY = 0.001;
+
+// The window the Glyph Depth Cue spends its whole range over: a Solar System one light year out is
+// as near as the cue reads, and one thirty-two light years out as far. Both ends are authored
+// against the real SDE build rather than against the sky of the moment - a drawn glyph stands
+// between 1.3 and 41 light years away, with 99 in 100 inside 26 - so a star's place in the near/far
+// order never depends on which glyphs happen to be up.
+//
+// It used to be a linear ramp four light years long, which put every glyph past four light years at
+// exactly 0: half the drawn sky shared one value, and a glyph at five light years was handed the
+// same light as one at twenty-four. The near end is DISTANCE_CUE_DISTANCE, the same light year the
+// Celestial Map's Distance Cue and Glyph Star Size fall off on, so one scale is behind every
+// statement the scene makes about distance.
+const DEPTH_CUE_NEAR_DISTANCE = DISTANCE_CUE_DISTANCE;
+const DEPTH_CUE_FAR_DISTANCE = 32 * DISTANCE_CUE_DISTANCE;
+
+// Brightness against distance is a power law, so the cue runs on the logarithm of it: that is what
+// leaves a readable step between five light years and twenty rather than spending the ramp on the
+// first light year and handing everything beyond it one value.
+const DEPTH_CUE_SPAN = Math.log(DEPTH_CUE_FAR_DISTANCE / DEPTH_CUE_NEAR_DISTANCE);
+
+/** How near a Solar System reads on the Glyph Depth Cue: 1 at the near end, 0 at the far one. */
+export function depthCueProximity(distance: number): number {
+  const ratio = DEPTH_CUE_FAR_DISTANCE / Math.max(distance, DEPTH_CUE_NEAR_DISTANCE);
+  return Math.min(1, Math.max(0, Math.log(ratio) / DEPTH_CUE_SPAN));
+}
 
 // The one documented exception to Glyph Integrity. A Solar System the observer is standing inside
 // has no direction in the sky at all, so it hands off to the local Solar System Map over this
@@ -82,6 +108,12 @@ export type ConstellationGlyph = {
    * size a figure came out at is something a test can read.
    */
   reach: number;
+  /**
+   * The Glyph Pen this whole glyph is drawn with, as a multiple of the width the ladder gives each
+   * of its strokes: a glyph standing small on the sky is drawn with a finer pen, so its lines never
+   * crowd into a knot brighter than a near glyph's. See `glyphPenScale`.
+   */
+  pen: number;
 };
 
 // Every glyph is built once per SDE build, in the constellation's own frame. Nothing here depends
@@ -183,12 +215,19 @@ function projectGlyph(index: ConstellationGlyphIndex, observerPosition: Vector3,
   const shape = index.shapeByConstellation.get(constellationId);
   const strokes = shape ? projectShape(shape, observerPosition, isHome, nodes, systems, opacity) : [];
 
+  // The pen comes from the same Glyph Footprint that Glyph Occlusion ranked this glyph by, so the
+  // sky it was given room for and the width it is drawn at are one measurement. A glyph the observer
+  // stands inside has no footprint and wears no artwork, so it is left at the authored width.
+  const bounds = index.boundsByConstellation.get(constellationId);
+  const footprint = bounds && computeGlyphFootprint(bounds, observerPosition);
+
   return {
     constellationId,
     opacity,
     nodes: nodes.map((node) => ({ ...node, opacity: node.opacity * opacity })),
     strokes,
     reach: shape && strokes.length > 0 ? shape.reach : 0,
+    pen: footprint ? glyphPenScale(footprint.radius) : 1,
   };
 }
 
@@ -304,7 +343,7 @@ function projectNode(system: ConstellationSystem, observerPosition: Vector3): Co
     systemId: system.id,
     position: [offset[0] * scale, offset[1] * scale, offset[2] * scale],
     opacity: Math.min(1, distance / COINCIDENCE_FADE_DISTANCE),
-    proximity: Math.max(0, 1 - distance / DEPTH_CUE_DISTANCE),
+    proximity: depthCueProximity(distance),
     distance,
   };
 }

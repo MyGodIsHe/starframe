@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { CELESTIAL_MAP_RADIUS, compileConstellationGlyphIndex, projectConstellationGlyphs, projectTravelConstellationGlyphs } from "./constellationGlyphModel";
+import { CELESTIAL_MAP_RADIUS, compileConstellationGlyphIndex, depthCueProximity, projectConstellationGlyphs, projectTravelConstellationGlyphs, type ConstellationGlyph } from "./constellationGlyphModel";
+import { GLYPH_PEN_MAX, glyphStrokeIntensity } from "./glyphLineStyle";
 import { boundsOf, clearsFootprint, computeGlyphFootprint } from "./glyphVisibility";
 
 // The real SDE build, so visibility assertions hold against the universe players actually fly in
@@ -325,6 +326,32 @@ describe("Glyph Integrity", () => {
     }
   });
 
+  // The complaint this answers: a far sigil read brighter than a near one. A stroke's width is in
+  // screen pixels, so until the Glyph Pen a figure drawn small on the sky put the same 16-pixel
+  // halo on lines that fell a few pixels apart, its glows piled on each other additively, and a
+  // glyph ten light years out came out up to ten times brighter per patch of sky than one two light
+  // years away. Measured here as what a glyph actually puts on the sky - every stroke's arc, times
+  // the pen it is drawn with, times the light the Depth Cue gives it - over the sky its own Glyph
+  // Footprint covers.
+  it("never draws a far sigil brighter per patch of sky than a near one", () => {
+    for (const constellationId of [20000435, 20000334, 20000203, 20000737]) {
+      const views = viewsAcrossDistance(constellationId);
+      const nearest = views[0];
+      const farthest = views[views.length - 1];
+
+      expect(farthest.distance).toBeGreaterThan(nearest.distance * 4);
+      expect(farthest.light).toBeLessThan(nearest.light * 0.7);
+      expect(farthest.pen).toBeLessThan(nearest.pen);
+      // And it falls the whole way, which is the shape the old ladder got exactly backwards: it rose
+      // steadily with distance. The one view allowed to sit below its neighbour is a sky-filling
+      // glyph whose pen the clamp held back from the width proportionality asked for.
+      for (let step = 1; step < views.length; step += 1) {
+        if (views[step - 1].pen === GLYPH_PEN_MAX) continue;
+        expect(views[step].light).toBeLessThan(views[step - 1].light);
+      }
+    }
+  });
+
   it("draws every member of a visible constellation, never a subset", () => {
     const index = compileConstellationGlyphIndex(UNIVERSE_SYSTEMS);
 
@@ -346,4 +373,84 @@ function angleBetween(left: readonly number[], right: readonly number[]): number
   const rightLength = Math.hypot(right[0], right[1], right[2]) || 1;
   const cos = (left[0] * right[0] + left[1] * right[1] + left[2] * right[2]) / (leftLength * rightLength);
   return Math.acos(Math.max(-1, Math.min(1, cos)));
+}
+
+describe("depthCueProximity", () => {
+  it("spends its whole range over the distances a glyph is really drawn at", () => {
+    // The ramp it replaced was linear over four light years, which put every glyph past four light
+    // years at exactly 0: a glyph at five light years and one at twenty-four were handed the same
+    // light. A drawn glyph stands between 1.3 and 41 light years out in the real SDE build.
+    const LIGHT_YEAR = 9_460_000_000_000_000;
+    const distances = [1.3, 2, 4, 6, 10, 16, 25, 41].map((years) => years * LIGHT_YEAR);
+    const proximities = distances.map(depthCueProximity);
+
+    for (let step = 1; step < proximities.length; step += 1) {
+      expect(proximities[step]).toBeLessThan(proximities[step - 1]);
+    }
+    // Every step has to be worth seeing, not just be in the right order.
+    expect(depthCueProximity(5 * LIGHT_YEAR) - depthCueProximity(24 * LIGHT_YEAR)).toBeGreaterThan(0.3);
+    expect(proximities[0]).toBeGreaterThan(0.6);
+  });
+
+  it("stays inside the ladder at both ends", () => {
+    expect(depthCueProximity(0)).toBe(1);
+    expect(depthCueProximity(Number.MAX_VALUE)).toBe(0);
+  });
+});
+
+/** The sky a glyph covers, in steradians, from its own Glyph Footprint radius. */
+const skyArea = (radius: number): number => Math.PI * radius * radius;
+
+// What one glyph puts on the sky per patch of it: every stroke's arc, weighted by the pen the glyph
+// is drawn with and the light the Glyph Depth Cue gives that stroke, over its own footprint. Widths
+// are in screen pixels and the halos add, so this is the quantity the eye reads as how bright a
+// sigil is - not any single stroke's opacity.
+function lightPerSky(glyph: ConstellationGlyph, footprintRadius: number): number {
+  const light = glyph.strokes.reduce((total, stroke) => {
+    const arc = distanceBetween(stroke.from, stroke.to) / CELESTIAL_MAP_RADIUS;
+    return total + arc * glyph.pen * glyphStrokeIntensity(stroke.kind, stroke.opacity, stroke.proximity);
+  }, 0);
+  return light / skyArea(footprintRadius);
+}
+
+// One real Constellation seen from a line of observers walking away from it, nearest first. The
+// figure, its Glyph Frame and its Solar Systems are the real ones out of the SDE build; only the
+// observer is placed, so nothing between two views differs but distance.
+//
+// The observers are given a Constellation each so that none of them stands inside the one under
+// test, and a lone Solar System reserves no sky, so Glyph Occlusion never drops the figure and the
+// sweep reaches the far end of the band. Walking real Solar Systems instead would: only one in
+// twenty of the ones at the right distance has a clear line to it.
+//
+// The band walked is where a figure is read as a figure: from the Legibility Floor out to 55
+// degrees, where nine in ten drawn glyphs sit. A glyph wrapping most of the sky is not looked at so
+// much as stood inside, and the sky it covers then grows faster than the drawing on it, so it says
+// nothing about how one sigil reads against another.
+function viewsAcrossDistance(constellationId: number): { degrees: number; distance: number; pen: number; light: number }[] {
+  const members = UNIVERSE_SYSTEMS.filter((system) => system.constellationId === constellationId);
+  const { centre, radius } = compileConstellationGlyphIndex(members).boundsByConstellation.get(constellationId)!;
+  const bearing = [0.48, 0.63, 0.61];
+  const length = Math.hypot(bearing[0], bearing[1], bearing[2]);
+  const band = [50, 40, 32, 25, 19, 14, 10];
+
+  // Each stop is the distance at which the glyph covers that much sky, so the sweep walks the band
+  // evenly rather than wherever a run of light years happens to land.
+  const observers = band.map((degrees, step) => ({
+    id: 900_000 + step,
+    constellationId: 990_000 + step,
+    position: centre.map((axis, axisIndex) => axis + (bearing[axisIndex] / length) * (radius / Math.sin((degrees * Math.PI) / 180))) as [number, number, number],
+  }));
+
+  const index = compileConstellationGlyphIndex([...members, ...observers]);
+  const bounds = index.boundsByConstellation.get(constellationId)!;
+
+  return observers.map((observer, step) => {
+    const glyph = projectConstellationGlyphs(index, observer.id).find((entry) => entry.constellationId === constellationId)!;
+    return {
+      degrees: band[step],
+      distance: distanceBetween(bounds.centre, observer.position),
+      pen: glyph.pen,
+      light: lightPerSky(glyph, computeGlyphFootprint(bounds, observer.position)!.radius),
+    };
+  });
 }

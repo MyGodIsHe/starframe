@@ -11,7 +11,7 @@ const SHELL_FACES = 2 * ATOM.shell.around * ATOM.shell.through;
 const CORE_FACES = 20;
 
 // The axis one shell turns about, by the same rule `buildAtom` places it with: the figure's own
-// axes, the upright first, so every shell is square to the last.
+// axes, the upright first, so every pair of shells is square.
 function shellAxis(index: number): SolidPoint {
   const axes: SolidPoint[] = [[0, 1, 0], [0, 0, 1], [1, 0, 0]];
   return axes[index % axes.length];
@@ -86,7 +86,7 @@ describe("buildAtom", () => {
   });
 
   it("stays coarse enough to solve the facing test for, for every glyph on the sky", () => {
-    expect(atom.solid.faces.length).toBeLessThanOrEqual(288);
+    expect(atom.solid.faces.length).toBeLessThanOrEqual(512);
   });
 
   it("is separate bodies - a shell each and a core - and not one welded lump", () => {
@@ -104,7 +104,8 @@ describe("buildAtom", () => {
     expect(Math.max(...atom.solid.vertices.map(radius))).toBeCloseTo(1);
   });
 
-  it("keeps every shell in its own plane, square to the next", () => {
+  it("keeps three shells in their own planes, square to each other", () => {
+    expect(ATOM.shells).toBe(3);
     for (let index = 0; index < ATOM.shells; index += 1) {
       const axis = shellAxis(index);
       const own = atom.solid.vertices.filter((_, vertex) => bodyOf(vertex) === index);
@@ -113,9 +114,11 @@ describe("buildAtom", () => {
       // A shell is a tube lying in its plane, so it reaches the tube's own radius off it and no
       // further - and it leans, so it is not the plane of any other shell.
       for (const vertex of own) expect(Math.abs(dot(vertex, axis))).toBeLessThanOrEqual(ATOM.shell.thickness + 1e-9);
-      // Square to the next one, exactly: that is what keeps the shells from projecting on top of
+      // Square to every other one, exactly: that is what keeps the shells from projecting on top of
       // one another and the atom from reading as an onion.
-      if (index + 1 < ATOM.shells) expect(dot(axis, shellAxis(index + 1))).toBeCloseTo(0);
+      for (let other = index + 1; other < ATOM.shells; other += 1) {
+        expect(dot(axis, shellAxis(other))).toBeCloseTo(0);
+      }
     }
   });
 
@@ -139,9 +142,9 @@ describe("buildAtom", () => {
     }
   });
 
-  it("marks the rails that run the whole way round each shell, and nothing on the core", () => {
+  it("marks one rail running the whole way round each shell, and nothing on the core", () => {
     expect(raw.drawn).toHaveLength(ATOM.shells * ATOM.shell.around * Math.ceil(ATOM.shell.through / ATOM.shell.railStep));
-    expect(ATOM.shell.railStep).toBe(1);
+    expect(ATOM.shell.railStep).toBe(ATOM.shell.through);
     for (const [from, to] of raw.drawn) expect(bodyOf(from)).toBe(bodyOf(to));
     expect(raw.drawn.some(([from]) => bodyOf(from) === ATOM.shells)).toBe(false);
   });

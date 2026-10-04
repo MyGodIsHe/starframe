@@ -2,9 +2,9 @@ import type { SolidPoint } from "./glyphSolid";
 import { intoFigureSpace } from "./sigilVectors";
 
 // A snowflake is one of the few figures whose sculpture is wholly described by a rule: six equal
-// rays, each carrying the same paired branches. The pieces overlap at their roots but each is a
-// closed shallow crystal in its own right. That keeps the silhouette unmistakable while preserving
-// honest volume and occlusion when Glyph Parallax turns the figure edge-on.
+// rays, each carrying the same paired branches. The whole outline is extruded as one shallow crystal.
+// Earlier each ray and branch was a separate closed prism; their roots intersected, so coplanar rims
+// were drawn over one another and opposite sides exposed different amounts of internal geometry.
 
 export type SnowflakeBranchLevel = {
   /** Distance from the centre at which this pair of branches grows from its ray. */
@@ -20,13 +20,13 @@ export type SnowflakeOptions = {
   arms: number;
   /** The repeated pairs of branches on every ray, from inner to outer. */
   branchLevels: readonly SnowflakeBranchLevel[];
-  /** Radius of the hexagonal crystal joining the rays into one silhouette. */
+  /** Radius of the polygonal crystal joining the rays into one silhouette. */
   hub: number;
   /** Half-width of a main ray at its root. */
   rayWidth: number;
-  /** Half-width of a branch at its root. */
+  /** Half-width of a branch where it returns to the main ray. */
   branchWidth: number;
-  /** Half-depth of every crystal, before the figure is normalized. */
+  /** Half-depth of the crystal, before the figure is normalized. */
   depth: number;
 };
 
@@ -50,40 +50,8 @@ export function buildSnowflake(options: SnowflakeOptions = SNOWFLAKE) {
   const vertices: SolidPoint[] = [];
   const triangles: Triple[] = [];
   const drawn: Pair[] = [];
-  const tips: Array<{ near: number; far: number }> = [];
-
-  // The centre is a hexagonal crystal rather than an empty crossing. Besides joining the six rays
-  // visually, its two rims give the face-on drawing a characteristic little heart.
-  const hub = Array.from({ length: options.arms }, (_, step): Point2 => {
-    const angle = (2 * Math.PI * step) / options.arms;
-    return [options.hub * Math.cos(angle), options.hub * Math.sin(angle)];
-  });
-  extrude(hub, options.depth, vertices, triangles, drawn, true);
-
-  for (let arm = 0; arm < options.arms; arm += 1) {
-    const angle = (2 * Math.PI * arm) / options.arms;
-    const along: Point2 = [Math.cos(angle), Math.sin(angle)];
-    const across: Point2 = [-along[1], along[0]];
-
-    // A main ray is a long triangular crystal. Its broad root disappears into the hub and its point
-    // remains exposed at radius one, so the six points own both the silhouette and the anchors.
-    const root = pointAlong(along, options.hub * 0.55);
-    const ray = needle(root, along, [along[0], along[1]], options.rayWidth);
-    const rayVertices = extrude(ray, options.depth, vertices, triangles, drawn, false);
-    tips.push({ near: rayVertices.near[2], far: rayVertices.far[2] });
-
-    for (const level of options.branchLevels) {
-      const branchRoot = pointAlong(along, level.at);
-      for (const side of [-1, 1]) {
-        const branchTip: Point2 = [
-          along[0] * (level.at + level.reach) + across[0] * level.spread * side,
-          along[1] * (level.at + level.reach) + across[1] * level.spread * side,
-        ];
-        const heading: Point2 = [branchTip[0] - branchRoot[0], branchTip[1] - branchRoot[1]];
-        extrude(needle(branchRoot, heading, branchTip, options.branchWidth), options.depth, vertices, triangles, drawn, false);
-      }
-    }
-  }
+  const profile = snowflakeProfile(options);
+  const crystal = extrude(profile.points, options.depth, vertices, triangles, drawn, new Set(profile.depthCorners));
 
   const sized = intoFigureSpace(vertices);
   return {
@@ -94,49 +62,108 @@ export function buildSnowflake(options: SnowflakeOptions = SNOWFLAKE) {
     drawn,
     // Alternating faces avoids placing every Solar System on one side of the shallow body while
     // keeping each anchor at a different, characteristic ray tip.
-    anchors: tips.map((tip, index) => (index % 2 === 0 ? tip.near : tip.far)),
+    anchors: profile.tips.map((tip, index) => (index % 2 === 0 ? crystal.near[tip] : crystal.far[tip])),
   };
 }
 
-function pointAlong(direction: Point2, distance: number): Point2 {
-  return [direction[0] * distance, direction[1] * distance];
+// The boundary of one arm walks from its lower root out through each branch, reaches the main tip,
+// and returns along the mirrored upper side. Repeating that walk around the centre gives one simple
+// outline: branches are points of that outline, not little solids pushed through the ray beneath.
+function snowflakeProfile(options: SnowflakeOptions): { points: Point2[]; tips: number[]; depthCorners: number[] } {
+  const points: Point2[] = [];
+  const tips: number[] = [];
+  const depthCorners: number[] = [];
+
+  for (let arm = 0; arm < options.arms; arm += 1) {
+    const angle = (2 * Math.PI * arm) / options.arms;
+    const local: Point2[] = [[options.hub, -options.rayWidth]];
+
+    for (const level of options.branchLevels) {
+      depthCorners.push(points.length + local.length);
+      local.push([level.at + level.reach, -level.spread], [level.at + options.branchWidth, -options.rayWidth]);
+    }
+
+    tips.push(points.length + local.length);
+    depthCorners.push(points.length + local.length);
+    local.push([1, 0]);
+
+    for (const level of [...options.branchLevels].reverse()) {
+      local.push([level.at + options.branchWidth, options.rayWidth]);
+      depthCorners.push(points.length + local.length);
+      local.push([level.at + level.reach, level.spread]);
+    }
+    local.push([options.hub, options.rayWidth]);
+
+    for (const [x, y] of local) points.push([
+      x * Math.cos(angle) - y * Math.sin(angle),
+      x * Math.sin(angle) + y * Math.cos(angle),
+    ]);
+  }
+
+  return { points, tips, depthCorners };
 }
 
-/** A counter-clockwise triangular crystal: a flat root and one sharp, recognisable tip. */
-function needle(root: Point2, heading: Point2, tip: Point2, halfWidth: number): Point2[] {
-  const reach = Math.hypot(heading[0], heading[1]);
-  const normal: Point2 = [-heading[1] / reach, heading[0] / reach];
-  return [
-    [root[0] + normal[0] * halfWidth, root[1] + normal[1] * halfWidth],
-    [root[0] - normal[0] * halfWidth, root[1] - normal[1] * halfWidth],
-    tip,
-  ];
-}
-
-// Extrude one convex profile as a closed crystal. One face rim is marked, plus selected corner edges
-// through its depth; the silhouette supplies the opposite rim and triangulation diagonals stay out.
+// Extrude one simple, possibly concave profile as a closed crystal. Both face contours are authored
+// because either side can face the observer. Only the ray and branch tips are carried through the
+// depth as explicit lines; marking every notch would turn an edge-on snowflake into a picket fence.
 function extrude(
   profile: readonly Point2[],
   depth: number,
   vertices: SolidPoint[],
   triangles: Triple[],
   drawn: Pair[],
-  markEveryCorner: boolean,
+  depthCorners: ReadonlySet<number>,
 ): { near: number[]; far: number[] } {
   const near = profile.map(([x, y]) => vertices.push([x, y, depth]) - 1);
   const far = profile.map(([x, y]) => vertices.push([x, y, -depth]) - 1);
 
-  for (let corner = 1; corner + 1 < profile.length; corner += 1) {
-    triangles.push([near[0], near[corner], near[corner + 1]]);
-    triangles.push([far[0], far[corner + 1], far[corner]]);
+  for (const [a, b, c] of triangulate(profile)) {
+    triangles.push([near[a], near[b], near[c]], [far[a], far[c], far[b]]);
   }
 
   for (let corner = 0; corner < profile.length; corner += 1) {
     const next = (corner + 1) % profile.length;
     triangles.push([near[corner], far[corner], far[next]], [near[corner], far[next], near[next]]);
-    drawn.push([near[corner], near[next]]);
-    if (markEveryCorner || corner === profile.length - 1) drawn.push([near[corner], far[corner]]);
+    drawn.push([near[corner], near[next]], [far[corner], far[next]]);
+    if (depthCorners.has(corner)) drawn.push([near[corner], far[corner]]);
   }
 
   return { near, far };
+}
+
+// Deterministic ear clipping keeps the two broad faces inside the concave outline. A fan from one
+// boundary corner would cut straight across the notches between branches and recreate overlaps in
+// the surface even though the contour itself was clean.
+function triangulate(profile: readonly Point2[]): Triple[] {
+  const remaining = profile.map((_, index) => index);
+  const triangles: Triple[] = [];
+
+  while (remaining.length > 3) {
+    let clipped = false;
+    for (let position = 0; position < remaining.length; position += 1) {
+      const previous = remaining[(position - 1 + remaining.length) % remaining.length];
+      const corner = remaining[position];
+      const next = remaining[(position + 1) % remaining.length];
+      if (turn(profile[previous], profile[corner], profile[next]) <= 1e-12) continue;
+      if (remaining.some((candidate) => candidate !== previous && candidate !== corner && candidate !== next
+        && insideTriangle(profile[candidate], profile[previous], profile[corner], profile[next]))) continue;
+
+      triangles.push([previous, corner, next]);
+      remaining.splice(position, 1);
+      clipped = true;
+      break;
+    }
+    if (!clipped) throw new Error("snowflake profile is not a simple counter-clockwise polygon");
+  }
+
+  triangles.push([remaining[0], remaining[1], remaining[2]]);
+  return triangles;
+}
+
+function insideTriangle(point: Point2, a: Point2, b: Point2, c: Point2): boolean {
+  return turn(a, b, point) >= -1e-12 && turn(b, c, point) >= -1e-12 && turn(c, a, point) >= -1e-12;
+}
+
+function turn(a: Point2, b: Point2, c: Point2): number {
+  return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
 }

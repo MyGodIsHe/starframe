@@ -135,7 +135,7 @@ describe("the imported library", () => {
 
   it("keeps a sigil to a handful of lines instead of a wireframe model", () => {
     for (const model of SIGIL_MODELS) {
-      expect(model.solid.edges.filter((edge) => edge.drawn).length).toBeLessThan(model.solid.edges.length / 2);
+      expect(model.solid.edges.filter((edge) => edge.drawn).length).toBeLessThanOrEqual(model.solid.edges.length / 2);
     }
   });
 

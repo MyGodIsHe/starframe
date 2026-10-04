@@ -84,6 +84,19 @@ describe("buildMillet", () => {
     expect(raw.drawn.length).toBeLessThan(millet.solid.edges.length / 3);
     for (const [from, to] of raw.drawn) expect(from).not.toBe(to);
   });
+
+  it("builds every grain with a symmetric taper around its widest station", () => {
+    const stemVertices = 18;
+    const verticesPerGrain = 26;
+    for (let grain = 0; grain < 7; grain += 1) {
+      const first = stemVertices + grain * verticesPerGrain;
+      const rings = [1, 9, 17].map((offset) => raw.vertices.slice(first + offset, first + offset + 8));
+      const depths = rings.map((ring) => Math.max(...ring.map((vertex) => Math.abs(vertex[2]))));
+
+      expect(depths[0]).toBeCloseTo(depths[2]);
+      expect(depths[1]).toBeGreaterThan(depths[0]);
+    }
+  });
 });
 
 describe("the millet as an observer sees it", () => {
@@ -97,6 +110,10 @@ describe("the millet as an observer sees it", () => {
       expect(seen.some((line) => same(line.from, raw.vertices[from]) && same(line.to, raw.vertices[to])
         || same(line.from, raw.vertices[to]) && same(line.to, raw.vertices[from]))).toBe(false);
     }
+  });
+
+  it("shows equal ridge detail from the front and back", () => {
+    expect(drawing([0, 0, -12])).toBe(drawing([0, 0, 12]));
   });
 
   it("changes its drawing when travel reveals its side and upper surfaces", () => {

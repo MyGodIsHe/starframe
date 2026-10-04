@@ -12,6 +12,7 @@ function glyph(constellationId: number, degrees: number): ConstellationGlyph {
     nodes: [{ systemId: constellationId, position, opacity: 1, proximity: 0.5, distance: 9_460_000_000_000_000 }],
     strokes: [{ kind: "silhouette", from: position, to: position, opacity: 1, proximity: 0.5, reliefStart: 0.5, reliefEnd: 0.5 }],
     reach: FIGURE_EXTENT,
+    pen: 1,
   };
 }
 

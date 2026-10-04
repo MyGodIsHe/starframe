@@ -6,8 +6,8 @@ import { intoFigureSpace } from "./sigilVectors";
 // subject it can be generated without inventing any unseen anatomy. The outline is carried through
 // a real thickness, making one closed body rather than a flat sign.
 //
-// One face contour is marked because it is the character of the figure; the silhouette recovers the
-// corresponding rim when the other face turns toward the observer. Every turn of the contour is
+// Both face contours are marked because either one can be the visible character of the figure. The
+// hidden-line pass still removes whichever contour is behind the body. Every turn of the contour is
 // also carried across the thickness, while fan edges into each face only triangulate a plane.
 
 export type CrossOptions = {
@@ -68,6 +68,7 @@ export function buildCross({ reach, halfWidth, halfDepth }: CrossOptions = CROSS
 
     drawn.push(
       [near[corner], near[next]],
+      [far[corner], far[next]],
       [near[corner], far[corner]],
     );
   }

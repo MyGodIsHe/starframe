@@ -59,14 +59,24 @@ describe("buildQuake", () => {
     expect(back).toEqual(front);
   });
 
-  it("keeps the ring in two separate arcs with the nail clear of both", () => {
-    // Three closed bodies rather than one: every edge of a figure that had grown together would
-    // border two faces of the same piece, and the two breaks would close up.
-    const bodies = (QUAKE.facets + 1) * 4;
-    const whole = quake.solid.vertices.length;
-    const part = (index: number): number => (index < bodies ? 0 : index < bodies * 2 ? 1 : 2);
-    expect(whole).toBe(bodies * 2 + (QUAKE.nail.length * 2 - 1) * 2);
-    for (const face of quake.solid.faces) expect(new Set(face.vertices.map(part)).size).toBe(1);
+  it("is one connected rune rather than separate horns and a blade", () => {
+    const neighbours = quake.solid.vertices.map(() => new Set<number>());
+    for (const edge of quake.solid.edges) {
+      neighbours[edge.from].add(edge.to);
+      neighbours[edge.to].add(edge.from);
+    }
+
+    const reached = new Set([0]);
+    const pending = [0];
+    while (pending.length > 0) {
+      for (const neighbour of neighbours[pending.pop()!]) {
+        if (reached.has(neighbour)) continue;
+        reached.add(neighbour);
+        pending.push(neighbour);
+      }
+    }
+
+    expect(reached.size).toBe(quake.solid.vertices.length);
   });
 
   it("sharpens each arc towards the crown and leaves it heaviest at the foot", () => {
@@ -81,7 +91,7 @@ describe("buildQuake", () => {
     expect(QUAKE.tip).toBeLessThan(QUAKE.root);
   });
 
-  it("stands the nail in the lower break, reaching well past the ring", () => {
+  it("grows the blade from the foot of the ring and reaches well past it", () => {
     const point = Math.min(...QUAKE.nail.map(([, y]) => y));
     const head = Math.max(...QUAKE.nail.map(([, y]) => y));
     expect(point).toBeLessThan(-1);
@@ -91,13 +101,13 @@ describe("buildQuake", () => {
     expect(Math.max(...QUAKE.nail.map(([x]) => x))).toBeLessThan(1);
   });
 
-  it("shows the nail in front of the ring rather than through it", () => {
+  it("uses its solid face to hide the outline on the far side", () => {
     const seen = classifyEdges(quake.solid, [0, 0, 6]);
     expect(seen.filter((visibility) => visibility === "hidden").length).toBeGreaterThan(0);
     expect(seen.filter((visibility) => visibility === "silhouette").length).toBeGreaterThan(0);
   });
 
-  it("offers well-separated anchors on both arcs and on the nail", () => {
+  it("offers well-separated anchors on both arcs and on the blade", () => {
     expect(quake.anchors.length).toBeGreaterThanOrEqual(4);
     for (let left = 0; left < quake.anchors.length; left += 1) {
       for (let right = left + 1; right < quake.anchors.length; right += 1) {

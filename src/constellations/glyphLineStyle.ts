@@ -19,8 +19,46 @@ export type GlyphStrokeKind = ConstellationGlyphStroke["kind"];
 
 export const GLYPH_BUCKET_COUNT = 2;
 export const GLYPH_BUCKET_BY_KIND: Record<GlyphStrokeKind, number> = { interior: 0, silhouette: 1 };
-export const GLYPH_STROKE_FLOOR: Record<GlyphStrokeKind, number> = { silhouette: 0.62, interior: 0.42 };
-export const GLYPH_STROKE_DEPTH_GAIN: Record<GlyphStrokeKind, number> = { silhouette: 0.38, interior: 0.4 };
+
+// How much of a stroke's light the Glyph Depth Cue hands out, and how little is left at the far end
+// of it. The floors used to be most of the brightness - 0.62 and 0.42 of it - which left depth a
+// tenth of the ladder to work with and made a far glyph as bright as a near one. Depth now carries
+// nearly all of it, and the floor is only what keeps the farthest drawn glyph from disappearing.
+export const GLYPH_STROKE_FLOOR: Record<GlyphStrokeKind, number> = { silhouette: 0.14, interior: 0.1 };
+export const GLYPH_STROKE_DEPTH_GAIN: Record<GlyphStrokeKind, number> = { silhouette: 0.86, interior: 0.82 };
+
+// Glyph Pen: the width every stroke of one glyph is drawn at, as a multiple of the width its bucket
+// on the ladder gives it, from how large the glyph stands on the sky.
+//
+// A stroke's width is in screen pixels, and nothing used to scale it with the figure it belongs to.
+// So the same body drawn across 8 degrees of sky and across 60 got the same 16-pixel halo on every
+// line, and the small one collapsed into a knot: its lines fell closer together than their own
+// glows were wide, the additive halos piled on each other, and a glyph ten light years out came out
+// up to ten times brighter per patch of sky than one two light years away. The Depth Cue cannot
+// answer that, because the pile is geometry rather than light.
+//
+// So a glyph drawn small is drawn with a finer pen: the pen follows the Glyph Footprint radius, and
+// the whole drawing is a scale model of itself. Lines then fall as far apart relative to their own
+// width however far away the figure is, the piling stops tracking distance, and what is left for
+// the eye to read as brightness is the Depth Cue - which is the one that knows what is near.
+//
+// What the proportionality is anchored on is a separate question from how steep it is, and only the
+// steepness - the span between the clamps - settles the crowding. The anchor is set near the large
+// end of the band, so the pen mostly thins small glyphs rather than fattening near ones: hung on the
+// median instead, a glyph filling the sky came out drawn in white pipes, its core line wide enough
+// that the whitened thread inside a neon stroke became the stroke.
+//
+// The clamps are the honest compromise at the two ends: a core line is only ~1.5 pixels to begin
+// with, so full proportionality would take the smallest glyph below a pixel, and the few glyphs that
+// wrap most of the sky do not need a 30-pixel pen to stop crowding themselves.
+export const GLYPH_PEN_REFERENCE_RADIANS = (24 * Math.PI) / 180;
+export const GLYPH_PEN_MIN = 0.42;
+export const GLYPH_PEN_MAX = 1.8;
+
+/** The pen a glyph of this Glyph Footprint radius is drawn with. */
+export function glyphPenScale(footprintRadians: number): number {
+  return Math.min(GLYPH_PEN_MAX, Math.max(GLYPH_PEN_MIN, footprintRadians / GLYPH_PEN_REFERENCE_RADIANS));
+}
 
 export type GlyphBucketStyle = {
   coreWidth: number;
@@ -52,7 +90,8 @@ export function glyphBucketStyles(profile: RenderQuality["name"]): GlyphBucketSt
 }
 
 // Each kind keeps a floor of its own, so a far glyph still reads as an outline with detail inside it
-// rather than dissolving into one even wash.
+// rather than dissolving into one even wash. The pen is not in here: it widens a stroke rather than
+// lighting it, and it is one number for a whole glyph.
 export function glyphStrokeIntensity(kind: GlyphStrokeKind, opacity: number, proximity: number): number {
   return opacity * (GLYPH_STROKE_FLOOR[kind] + proximity * GLYPH_STROKE_DEPTH_GAIN[kind]);
 }

@@ -190,6 +190,7 @@ export function SceneViewport({ camera, onCameraChange, star, planets, gates, ac
            data-constellation-spikes-per-star={GLYPH_STAR_SPIKE_COUNT}
            data-constellation-star-diameters={glyphStarDiameterRange(constellationGlyphs, quality.name)}
            data-constellation-glyph-reach={glyphReachRange(constellationGlyphs)}
+           data-constellation-glyph-pens={glyphPenRange(constellationGlyphs)}
           data-celestial-preview-arc-count={previewEdges.length}
       data-jump-preview-system-ids={previewSystems.map((system) => system.id).join(",") || undefined}
          data-jump-preview-edges={previewEdges.map((edge) => edge.join(":" )).join(",") || undefined}
@@ -830,6 +831,14 @@ function glyphStarDiameterRange(glyphs: ReturnType<typeof projectTravelConstella
 function glyphReachRange(glyphs: ReturnType<typeof projectTravelConstellationGlyphs>): string {
   const reaches = glyphs.filter((glyph) => glyph.reach > 0).map((glyph) => glyph.reach);
   return reaches.length === 0 ? "" : `${Math.min(...reaches).toFixed(2)}:${Math.max(...reaches).toFixed(2)}`;
+}
+
+// The finest and the boldest Glyph Pen in the sky, so that a figure standing small being drawn with
+// a thinner line - and not with the same 16-pixel halo a figure filling the sky gets - is something
+// a test can read.
+function glyphPenRange(glyphs: ReturnType<typeof projectTravelConstellationGlyphs>): string {
+  const pens = glyphs.filter((glyph) => glyph.strokes.length > 0).map((glyph) => glyph.pen);
+  return pens.length === 0 ? "" : `${Math.min(...pens).toFixed(2)}:${Math.max(...pens).toFixed(2)}`;
 }
 
 function CelestialMap({ systems, activeSystemId, travel, constellationGlyphIndex, constellationGlyphs, previewEdges, previewLeaving, quality, reducedMotion, snapshotTime }: { systems: UniverseIndex["systems"]; activeSystemId: number; travel: TravelFrame | null; constellationGlyphIndex: ReturnType<typeof compileConstellationGlyphIndex>; constellationGlyphs: ReturnType<typeof projectTravelConstellationGlyphs>; previewEdges: [number, number][]; previewLeaving: boolean; quality: RenderQuality; reducedMotion: boolean; snapshotTime: number | null }): ReactNode {

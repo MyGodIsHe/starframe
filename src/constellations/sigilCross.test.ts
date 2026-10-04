@@ -66,8 +66,8 @@ describe("buildCross", () => {
     }
   });
 
-  it("marks one cross contour and every corner carried through its depth", () => {
-    expect(raw.drawn).toHaveLength(2 * PROFILE_CORNERS);
+  it("marks both cross contours and every corner carried through its depth", () => {
+    expect(raw.drawn).toHaveLength(3 * PROFILE_CORNERS);
     const rails = raw.drawn.filter(([from, to]) => Math.abs(raw.vertices[from][2] - raw.vertices[to][2]) > 1e-9);
 
     expect(rails).toHaveLength(PROFILE_CORNERS);
@@ -100,5 +100,19 @@ describe("buildCross", () => {
     expect(Math.max(...endpoints.map((point) => point[1]))).toBeCloseTo(reach);
     expect(Math.min(...endpoints.map((point) => point[1]))).toBeCloseTo(-reach);
     expect(Math.min(...endpoints.map((point) => point[2]))).toBeGreaterThan(0);
+  });
+
+  it.each([
+    [[0, 0, 12], [0, 0, -12]],
+    [[12, 0, 0], [-12, 0, 0]],
+  ] as const)("renders the same amount of edge detail from opposite sides", (firstObserver, oppositeObserver) => {
+    const first = drawnEdges(cross.solid, firstObserver);
+    const opposite = drawnEdges(cross.solid, oppositeObserver);
+
+    expect(first.length).toBeGreaterThan(0);
+    expect(opposite).toHaveLength(first.length);
+    expect(opposite.filter((line) => line.kind === "silhouette")).toHaveLength(
+      first.filter((line) => line.kind === "silhouette").length,
+    );
   });
 });

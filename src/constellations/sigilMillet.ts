@@ -26,7 +26,7 @@ export type MilletOptions = {
 };
 
 export const MILLET: MilletOptions = {
-  stem: { bottom: -1, top: 0.72, radius: 0.035, sides: 6 },
+  stem: { bottom: -1, top: 0.72, radius: 0.035, sides: 8 },
   crown: { root: [0, 0.58], tip: [0, 1.12], width: 0.105, depth: 0.09 },
   pairs: [
     { root: [0, -0.34], tip: [0.48, 0.1], width: 0.14, depth: 0.11 },
@@ -62,9 +62,9 @@ export function buildMillet(options: MilletOptions = MILLET) {
   };
 }
 
-// One pointed leaf or grain. Two broad stations give it a long almond profile rather than the
-// swollen middle of an ellipsoid. Eight corners are enough to round that profile while retaining a
-// definite front and back ridge for the drawing.
+// One pointed leaf or grain. Three symmetric stations make a clean almond: it opens gradually from
+// either point, reaches its full width in the middle, then closes by the same rule. Eight corners are
+// enough to round that profile while retaining a definite front and back ridge for the drawing.
 function spindle(mesh: Mesh, blade: MilletBlade, side: -1 | 1, around: number): { tip: number } {
   const start: SolidPoint = [side * blade.root[0], blade.root[1], 0];
   const end: SolidPoint = [side * blade.tip[0], blade.tip[1], 0];
@@ -74,19 +74,25 @@ function spindle(mesh: Mesh, blade: MilletBlade, side: -1 | 1, around: number): 
   const through: SolidPoint = [0, 0, 1];
   const first = place(mesh, start);
   const rings = [
-    section(mesh, mix(start, end, 0.3), across, through, blade.width * 0.88, blade.depth * 0.88, around),
-    section(mesh, mix(start, end, 0.66), across, through, blade.width, blade.depth, around),
+    section(mesh, mix(start, end, 0.25), across, through, blade.width * 0.78, blade.depth * 0.78, around),
+    section(mesh, mix(start, end, 0.5), across, through, blade.width, blade.depth, around),
+    section(mesh, mix(start, end, 0.75), across, through, blade.width * 0.78, blade.depth * 0.78, around),
   ];
   const last = place(mesh, end);
 
   cap(mesh, first, rings[0], false);
-  band(mesh, rings[0], rings[1]);
-  cap(mesh, last, rings[1], true);
+  for (let station = 0; station + 1 < rings.length; station += 1) band(mesh, rings[station], rings[station + 1]);
+  cap(mesh, last, rings[rings.length - 1], true);
 
   // The opposed depth corners are the two ridges of a lenticular body. Both are authored; hidden
   // line removal chooses the one belonging to the side an observer can actually see.
   for (const corner of [Math.round(around / 4), Math.round((3 * around) / 4)]) {
-    mesh.drawn.push([first, rings[0][corner]], [rings[0][corner], rings[1][corner]], [rings[1][corner], last]);
+    let previous = first;
+    for (const ring of rings) {
+      mesh.drawn.push([previous, ring[corner]]);
+      previous = ring[corner];
+    }
+    mesh.drawn.push([previous, last]);
   }
   return { tip: last };
 }
@@ -106,8 +112,8 @@ function section(
   });
 }
 
-// The stem is closed independently. Its front rail gives the otherwise very narrow cylinder one
-// stable interior stroke, while its observer-dependent outline supplies the two sides.
+// The stem is closed independently. Opposed rails give the otherwise very narrow cylinder one
+// stable interior stroke from either side, while hidden-line removal suppresses the rail behind it.
 function tube(mesh: Mesh, bottom: number, top: number, radius: number, sides: number): void {
   const lower = section(mesh, [0, bottom, 0], [-1, 0, 0], [0, 0, 1], radius, radius, sides);
   const upper = section(mesh, [0, top, 0], [-1, 0, 0], [0, 0, 1], radius, radius, sides);
@@ -119,7 +125,8 @@ function tube(mesh: Mesh, bottom: number, top: number, radius: number, sides: nu
   cap(mesh, head, upper, true);
 
   const front = Math.round(sides / 4);
-  mesh.drawn.push([foot, lower[front]], [lower[front], upper[front]], [upper[front], head]);
+  const back = (front + Math.round(sides / 2)) % sides;
+  for (const rail of [front, back]) mesh.drawn.push([foot, lower[rail]], [lower[rail], upper[rail]], [upper[rail], head]);
 }
 
 function band(mesh: Mesh, near: readonly number[], far: readonly number[]): void {

@@ -5,9 +5,9 @@ type Triple = [number, number, number];
 type Pair = [number, number];
 type Flat = readonly [number, number];
 
-/** Proportions of the broken ring and of the nail standing in the break. */
+/** Proportions of the open ring and of the blade growing out of its foot. */
 export type QuakeOptions = {
-  /** Half the depth through the ring. The nail stands a little proud of it, so it reads as in front. */
+  /** Half the depth through the rune. */
   depth: number;
   /** Facets along each of the ring's two arcs. */
   facets: number;
@@ -19,14 +19,13 @@ export type QuakeOptions = {
   root: number;
   /** How the band thickens along the arc. One is an even taper; below one it leaves its tip faster. */
   taper: number;
-  /** The right half of the nail's outline, from its point up to the corner of its head. */
+  /** The right half of the blade's outline, from its lower point to the corner of its head. */
   nail: readonly Flat[];
 };
 
-// The ring is one circle with two bites out of it, and the bites are the same size: an arc runs from
-// sixty-one degrees above the horizon on one side to sixty-one below it on the other. What makes
-// the crown read as a hairline break and the foot as a wide one is the taper, not the angle - the
-// band comes to a point at the crown and is at its heaviest where it is cut off at the foot.
+// Two mirrored arcs leave the narrow opening at the crown. Each arc grows heavier towards the foot,
+// where it becomes the blade rather than ending beside it. The reference is worn and asymmetric,
+// but those are properties of its surface; the rune underneath is this clean symmetric silhouette.
 export const QUAKE: QuakeOptions = {
   depth: 0.11,
   facets: 13,
@@ -35,15 +34,14 @@ export const QUAKE: QuakeOptions = {
   tip: 0.037,
   root: 0.22,
   taper: 0.85,
-  // Point, the long parallel blade, the underside of the guard, its outer end, the shaft, and the
-  // head flaring out over it. Measured off the ring's own radius, with the ring centred on the
-  // origin, so the nail stands in the lower break without touching either arc.
+  // Point, the long lower blade, the outside of its shoulder, then the shaft and head inside the
+  // ring. The shoulder and the shaft are joined to the outer and inner feet of the arc respectively.
   nail: [
     [0, -1.845],
     [0.1, -1.291],
     [0.105, -1.009],
     [0.4, -0.93],
-    [0.4, -0.87],
+    [0.47, -0.875],
     [0.105, -0.75],
     [0.105, -0.425],
     [0.248, -0.345],
@@ -52,14 +50,11 @@ export const QUAKE: QuakeOptions = {
 };
 
 /**
- * A heavy ring broken at the crown and at the foot, with a long nail standing in the lower break.
+ * The Quake rune: a heavy ring open at the crown and growing into a long central blade at its foot.
  *
- * Three separate closed bodies rather than one, which is what gives the figure its two breaks: the
- * arcs never meet each other and the nail never touches either of them. Each body is wound outwards,
- * so the facing test asks the same question on either side of the figure, and each of the four rims
- * of a band is marked on the back as well as the front. An unmarked back rim simply goes missing
- * once a pilot has travelled round, which is how this figure came out solid from the front and
- * hollow from behind.
+ * The entire outline is one simple polygon carried through a real depth. In particular, the two
+ * lower arc ends share material with the blade: overlapping or merely touching separate prisms look
+ * joined face-on but split apart as soon as a pilot travels around them.
  */
 export function buildQuake(options: QuakeOptions = QUAKE) {
   const vertices: SolidPoint[] = [];
@@ -67,23 +62,26 @@ export function buildQuake(options: QuakeOptions = QUAKE) {
   const drawn: Pair[] = [];
 
   const arc = arcBand(options);
-  const right = addBand(arc.outer, arc.inner, options.depth, false, vertices, triangles, drawn);
-  // Mirroring across the upright turns a body inside out, so the left arc's faces are wound back the
-  // other way rather than authored a second time and trusted to agree.
-  const left = addBand(arc.outer.map(mirror), arc.inner.map(mirror), options.depth, true, vertices, triangles, drawn);
-  const nail = addPrism(wholeNail(options.nail), options.depth * 1.25, vertices, triangles, drawn);
+  const profile = wholeRune(arc, options.nail);
+  const rune = addPrism(profile, options.depth, vertices, triangles, drawn);
+  const at = (score: (point: Flat) => number, side: (point: Flat) => boolean = () => true): number => {
+    let best = profile.findIndex(side);
+    for (let index = best + 1; index < profile.length; index += 1) {
+      if (side(profile[index]) && score(profile[index]) > score(profile[best])) best = index;
+    }
+    return rune.front[best];
+  };
 
-  const foot = options.facets;
   return {
     name: "quake",
-    source: { file: "generated, a ring broken at the crown and the foot around a standing nail" },
+    source: { file: "generated, one open ring growing into a central blade" },
     vertices: intoFigureSpace(vertices),
     triangles,
     drawn,
     anchors: [
-      right.outerFront[0], left.outerFront[0],
-      right.outerFront[foot], left.outerFront[foot],
-      nail.front[0], nail.front[options.nail.length - 1],
+      at(([, y]) => y, ([x]) => x > 0), at(([, y]) => y, ([x]) => x < 0),
+      at(([x]) => x), at(([x]) => -x),
+      at(([, y]) => -y),
     ],
   };
 }
@@ -111,54 +109,24 @@ function mirror([x, y]: Flat): Flat {
   return [-x, y];
 }
 
-// The nail is authored as its right half, from the point up to the corner of its head, and mirrored
-// onto the left. A figure this symmetrical must not be able to drift out of true one typed number at
-// a time.
-function wholeNail(half: readonly Flat[]): Flat[] {
-  return [...half, ...half.slice(1).reverse().map(mirror)];
-}
-
-// A closed band between two matching paths: a front and a back face, an outer and an inner wall, and
-// a cap over each cut end.
-function addBand(outer: readonly Flat[], inner: readonly Flat[], depth: number, flipped: boolean, vertices: SolidPoint[], triangles: Triple[], drawn: Pair[]) {
-  const place = ([x, y]: Flat, z: number): number => vertices.push([x, y, z]) - 1;
-  const outerFront = outer.map((point) => place(point, depth));
-  const innerFront = inner.map((point) => place(point, depth));
-  const outerBack = outer.map((point) => place(point, -depth));
-  const innerBack = inner.map((point) => place(point, -depth));
-  const face = (...each: Triple[]): void => {
-    for (const [a, b, c] of each) triangles.push(flipped ? [a, c, b] : [a, b, c]);
-  };
-
-  for (let step = 0; step + 1 < outer.length; step += 1) {
-    const next = step + 1;
-    face(
-      [outerFront[step], innerFront[step], innerFront[next]], [outerFront[step], innerFront[next], outerFront[next]],
-      [outerBack[step], outerBack[next], innerBack[next]], [outerBack[step], innerBack[next], innerBack[step]],
-      [outerFront[step], outerFront[next], outerBack[next]], [outerFront[step], outerBack[next], outerBack[step]],
-      [innerFront[step], innerBack[next], innerFront[next]], [innerFront[step], innerBack[step], innerBack[next]],
-    );
-    // The four rims are the drawing. The diagonals holding the facets together are not, and neither
-    // are rungs across the walls, which would ladder a plain piece of iron.
-    drawn.push(
-      [outerFront[step], outerFront[next]], [innerFront[step], innerFront[next]],
-      [outerBack[step], outerBack[next]], [innerBack[step], innerBack[next]],
-    );
-  }
-
-  const foot = outer.length - 1;
-  face(
-    [outerFront[0], innerBack[0], innerFront[0]], [outerFront[0], outerBack[0], innerBack[0]],
-    [outerFront[foot], innerFront[foot], innerBack[foot]], [outerFront[foot], innerBack[foot], outerBack[foot]],
-  );
-  for (const end of [0, foot]) {
-    drawn.push(
-      [outerFront[end], innerFront[end]], [outerBack[end], innerBack[end]],
-      [outerFront[end], outerBack[end]], [innerFront[end], innerBack[end]],
-    );
-  }
-
-  return { outerFront, innerFront, outerBack, innerBack };
+// Walk the whole boundary counter-clockwise. The first five blade points are its point and outer
+// right shoulder; the remaining four climb the inner shaft to the head. The arc paths fill the two
+// gaps between those groups, making the joins shared edges rather than coincident surfaces.
+function wholeRune(arc: { outer: readonly Flat[]; inner: readonly Flat[] }, half: readonly Flat[]): Flat[] {
+  if (half.length < 6) throw new Error("Quake blade needs an outer shoulder and an inner shaft");
+  const shoulder = half.slice(1, 5);
+  const shaft = half.slice(5);
+  return [
+    half[0],
+    ...shoulder,
+    ...arc.outer.slice().reverse(),
+    ...arc.inner,
+    ...shaft,
+    ...shaft.slice().reverse().map(mirror),
+    ...arc.inner.slice().reverse().map(mirror),
+    ...arc.outer.map(mirror),
+    ...shoulder.slice().reverse().map(mirror),
+  ];
 }
 
 /** A closed slab of one outline, with both of its faces marked as the drawing. */

@@ -9,11 +9,10 @@ import { add, cross, distance, dot, scale, subtract, turnOnto, unit } from "./si
 // first thing in it. An atom passes the same test. It is a core with shells round it: a radius, a
 // count, and the tube a shell is made of. Nothing about it is a guess at a shape nobody drew.
 //
-// The shells are set square to each other, and that is the whole of why it reads. Two planes at a
-// right angle are as far apart as two planes get, so from wherever an observer stands the shells
-// cross at the widest angle they can and the figure stays two orbits round a core. Set at any
-// narrower angle they project nearly on top of one another from most sides, and the atom collapses
-// into an onion of rings - which is exactly what the first few of these looked like.
+// The three shells are set square to each other, one in each principal plane. That is the canonical
+// spatial atom: three distinct orbits crossing at the widest angle they can. Set at any narrower
+// angle they project nearly on top of one another from most sides, and the atom collapses into an
+// onion of rings - which is exactly what the first few of these looked like.
 //
 // It is also the figure that asks the body the harder question. A ring hides its own far side; an
 // atom is three separate bodies hiding each other. The core blanks whatever passes behind it and
@@ -38,18 +37,17 @@ export type AtomOptions = {
 };
 
 export const ATOM: AtomOptions = {
-  shells: 2,
+  shells: 3,
   core: 0.32,
-  // Thin, because a shell is one orbit and not a band, and finely stepped, because a tube this
-  // narrow has no facets left to read. All three longitudinal rails belong to the drawing: with
-  // only one marked, a shell seen narrowly broke into unrelated fragments between silhouettes.
-  shell: { around: 16, through: 3, thickness: 0.035, railStep: 1 },
+  // Thin, because a shell is one orbit and not a band. Twenty-four steps make its long circle read
+  // as round while three sides keep the narrow tube inside the figure-wide face budget. Only the
+  // outer rail is authored: each orbit is one continuous line rather than three parallel strokes.
+  shell: { around: 24, through: 3, thickness: 0.035, railStep: 3 },
   anchors: 6,
 };
 
-// The axis each shell turns about, in the figure's own frame. The first lies in the figure's own
-// equator, so the upright is its axis and the atom has an obvious way up; each one after that
-// stands through it.
+// The axis each shell turns about, in the figure's own frame. Together they are the normals of the
+// three principal planes, so every pair of shells meets at exactly a right angle.
 const AXES: SolidPoint[] = [[0, 1, 0], [0, 0, 1], [1, 0, 0]];
 
 /** Three indices into the vertices, which is one triangle or one face of the table below. */

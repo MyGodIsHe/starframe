@@ -68,8 +68,10 @@ export function viewSigilFigure(model: SigilModel, observer: SolidPoint): Conste
     }));
 
   // The page stands one figure on its own, with no constellation to be the size of, so there is
-  // no reach to report. It is the sky that measures a figure against its own Solar Systems.
-  return { constellationId: WORKSHOP_CONSTELLATION_ID, opacity: 1, nodes, strokes, reach: 0 };
+  // no reach to report. It is the sky that measures a figure against its own Solar Systems. And with
+  // no Glyph Footprint to be large or small on, the pen is the reference one: the page previews the
+  // width the ladder authored rather than the width some constellation would have earned.
+  return { constellationId: WORKSHOP_CONSTELLATION_ID, opacity: 1, nodes, strokes, reach: 0, pen: 1 };
 }
 
 // Glyph Depth Cue, over the one object on the page: the near side of the body is sharp cyan and its
