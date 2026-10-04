@@ -5,6 +5,7 @@ import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import { createAmbientFlightTrailState, updateAmbientFlightTrail, type AmbientFlightTrailPoint, type AmbientFlightTrailProfile } from "./ambientFlightTrails";
+import { SCENE_PALETTE } from "./scenePalette";
 
 type TrailRenderState = {
   geometry: LineSegmentsGeometry;
@@ -37,21 +38,20 @@ const HEAD_FRAGMENT_SHADER = `
   }
 `;
 
-export function FlightTrailLayer({ points, seed, profile, snapshotTime, color = "#d9ecff" }: {
+export function FlightTrailLayer({ points, seed, profile, snapshotTime }: {
   points: readonly AmbientFlightTrailPoint[];
   seed: number;
   profile: AmbientFlightTrailProfile;
   snapshotTime: number | null;
-  color?: string;
 }): ReactNode {
   const [renderState, setRenderState] = useState<TrailRenderState | null>(null);
   const scheduler = useRef<ReturnType<typeof createAmbientFlightTrailState> | null>(null);
 
   useLayoutEffect(() => {
-    const state = createRenderState(profile, color);
+    const state = createRenderState(profile);
     setRenderState(state);
     return () => disposeRenderState(state);
-  }, [profile, color]);
+  }, [profile]);
 
   useLayoutEffect(() => {
     scheduler.current = null;
@@ -74,7 +74,7 @@ export function FlightTrailLayer({ points, seed, profile, snapshotTime, color = 
   );
 }
 
-function createRenderState(profile: AmbientFlightTrailProfile, color: string): TrailRenderState {
+function createRenderState(profile: AmbientFlightTrailProfile): TrailRenderState {
   const geometry = new LineSegmentsGeometry();
   const linePositions = new Float32Array(6);
   geometry.setPositions(linePositions);
@@ -85,8 +85,8 @@ function createRenderState(profile: AmbientFlightTrailProfile, color: string): T
   geometry.setAttribute("instanceOpacityEnd", opacityEnd);
   geometry.instanceCount = 0;
 
-  const halo = createLine(geometry, profile === "mobile" ? 2.2 : 3.2, 0.2, 10, color);
-  const core = createLine(geometry, profile === "mobile" ? 0.85 : 1.15, 0.82, 11, color);
+  const halo = createLine(geometry, profile === "mobile" ? 2.2 : 3.2, 0.24, 10, SCENE_PALETTE.flightTrail.halo);
+  const core = createLine(geometry, profile === "mobile" ? 0.85 : 1.15, 0.88, 11, SCENE_PALETTE.flightTrail.core);
   const headPosition = new Float32Array(3);
   const headGeometry = new BufferGeometry();
   headGeometry.setAttribute("position", new BufferAttribute(headPosition, 3).setUsage(DynamicDrawUsage));
@@ -97,7 +97,7 @@ function createRenderState(profile: AmbientFlightTrailProfile, color: string): T
     fragmentShader: HEAD_FRAGMENT_SHADER,
     transparent: true,
     uniforms: {
-      color: { value: new Color(color) },
+      color: { value: new Color(SCENE_PALETTE.flightTrail.head) },
       opacity: { value: 0 },
       size: { value: profile === "mobile" ? 7 : 10 },
     },

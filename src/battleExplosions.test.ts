@@ -64,12 +64,12 @@ describe("battle explosions", () => {
     const wave = explosionPhaseAt(event, 1_140);
     expect(wave?.progress).toBeCloseTo(0);
 
-    const midWave = explosionPhaseAt(event, 1_140 + 750);
+    const midWave = explosionPhaseAt(event, 1_140 + 1_450);
     expect(midWave?.phase).toBe("wave");
     expect(midWave!.progress).toBeGreaterThan(0);
     expect(midWave!.progress).toBeLessThan(1);
 
-    const scarStart = 1_140 + 1_450; // FLASH_MS(140) + WAVE_MS(lerp 700..2200 @ 0.5 = 1450)
+    const scarStart = 1_140 + 2_900; // FLASH_MS(140) + WAVE_MS(lerp 1400..4400 @ 0.5 = 2900)
     expect(explosionPhaseAt(event, scarStart)?.phase).toBe("scar");
     expect(explosionPhaseAt(event, scarStart + 19_000 - 1)?.phase).toBe("scar"); // SCAR_MS @ 0.5 = lerp(10000,28000,0.5) = 19000
     expect(explosionPhaseAt(event, scarStart + 19_000 + 1)).toBeNull();
@@ -79,10 +79,10 @@ describe("battle explosions", () => {
     const small: ExplosionEvent = { tickIndex: 0, startedAt: 0, magnitude: 0 };
     const large: ExplosionEvent = { tickIndex: 0, startedAt: 0, magnitude: 1 };
 
-    // Small ship's whole lifecycle (140 + 700 + 10000 = 10840ms) has already ended...
-    expect(explosionPhaseAt(small, 10_840)).toBeNull();
-    // ...while the same instant is still deep in the large ship's wave/scar (140 + 2200 + 28000).
-    expect(explosionPhaseAt(large, 10_840)).not.toBeNull();
+    // Small ship's whole lifecycle (140 + 1400 + 10000 = 11540ms) has already ended...
+    expect(explosionPhaseAt(small, 11_540)).toBeNull();
+    // ...while the same instant is still deep in the large ship's wave/scar (140 + 4400 + 28000).
+    expect(explosionPhaseAt(large, 11_540)).not.toBeNull();
   });
 
   it("gives distinct events distinct, bounded offsets around an anchor", () => {

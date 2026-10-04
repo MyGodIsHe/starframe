@@ -4,25 +4,25 @@ import { AdditiveBlending, BufferAttribute, type BufferGeometry, type Group, typ
 import { LOCAL_SYSTEM_SCENE_UNITS_PER_METER, projectLocalSystem, type LocalSystemProjection } from "./localSystemProjection";
 import { calculateOrbitTrail, type OrbitTrailPlanet } from "./orbitTrails";
 import { CelestialStarField } from "./CelestialStarField";
-import { countDiffractionCandidates, toStarFieldQualityBudget } from "./celestialStarFieldModel";
+import { BACKGROUND_STAR_DIMMING } from "./celestialStarFieldModel";
 import { SkyBackground } from "./SkyBackground";
 import { ConstellationGlyphs } from "./constellations/ConstellationGlyphs";
 import { compileConstellationGlyphIndex, projectTravelConstellationGlyphs } from "./constellations/constellationGlyphModel";
+import { GLYPH_STAR_SPIKE_COUNT, glyphStarDiameter } from "./constellations/glyphStarSpikes";
 import type { SystemResource, UniverseIndex } from "./universe/generateUniverse";
 import type { RenderQuality } from "./renderQuality";
 import { projectCelestialMap } from "./celestialMap";
-import { projectInterstellarPreview, projectTravelInterstellarProjection, resolveObserverPosition } from "./interstellarProjection";
+import { projectInterstellarPreview, projectTravelInterstellarProjection } from "./interstellarProjection";
 import { localDetailOpacity, travelSystemOffset, type TravelFrame } from "./travelCoordinates";
 import { FlightTrailLayer } from "./FlightTrailLayer";
 import type { AmbientFlightTrailPoint } from "./ambientFlightTrails";
 import { BattleFlareLayer } from "./BattleFlareLayer";
 import { BattleBeaconOverlay } from "./BattleBeaconOverlay";
+import { dampCameraState, orbitCameraPosition, type CameraState } from "./orbitCamera";
+import { planetAppearance, SCENE_PALETTE } from "./scenePalette";
 
-export type CameraState = {
-  azimuth: number;
-  elevation: number;
-  distance: number;
-};
+// Re-exported so the viewport's own camera stays one import for its callers.
+export { dampCameraState, orbitCameraPosition, type CameraState };
 
 export type ZoomBounds = {
   min: number;
@@ -58,7 +58,6 @@ const FARTHEST_OBJECT_MARGIN = 1.65;
 const FALLBACK_MIN_DISTANCE = 6;
 const FALLBACK_MAX_DISTANCE = 18;
 const ZOOM_STEP_RATIO = 1 / 1200;
-const CAMERA_DAMPING = 18;
 const MARKER_SCALE_DIVISOR = 600;
 // Bigger than a planet's markerSize (8) because the beacon glyph's own geometry (torus/cone)
 // covers far less of its bounding sphere than a planet's solid marker dot does.
@@ -67,8 +66,10 @@ const GATE_MARKER_SIZE = 20;
 const GATE_MARKER_OUTER_RADIUS = 0.375;
 const PLANET_MARKER_BASE_OPACITY = 0.8;
 // Decorative background stars must always read as dimmer than Minimum Map Brightness so every real
-// Solar System stays distinguishable from procedural fill (see interstellarProjection.ts).
-export const DECORATIVE_STAR_MAX_OPACITY = 0.4;
+// Solar System stays distinguishable from procedural fill (see interstellarProjection.ts). They take
+// the same fifth off as the Celestial Map's own stars, so the whole sky behind a Constellation Glyph
+// dims together and that margin is preserved rather than quietly narrowed.
+export const DECORATIVE_STAR_MAX_OPACITY = 0.4 * BACKGROUND_STAR_DIMMING;
 // Fixed screen-pixel sizes baked into each decorative star at creation time (see
 // createDecorativeStarField below) - must be initialized before DECORATIVE_STARS calls that
 // function at module load time.
@@ -93,12 +94,6 @@ export function SceneViewport({ camera, onCameraChange, star, planets, gates, ac
   const previewGate = displayGates.find((gate) => gate.id === previewGateId);
   const previewDestination = celestialMap.find((marker) => marker.id === previewSystems[0]?.id);
   const constellationGlyphIndex = useMemo(() => compileConstellationGlyphIndex(celestialSystems), [celestialSystems]);
-  // Diagnostic only (see CelestialStarField.tsx / celestialStarFieldModel.ts): confirms in tests and
-  // screenshots that density alone never creates a diffraction spike, without exposing shader state.
-  const diffractionCandidateCount = useMemo(() => {
-    const observerPosition = resolveObserverPosition(celestialSystems, activeSystemId, null, 0);
-    return observerPosition ? countDiffractionCandidates(celestialSystems, observerPosition, toStarFieldQualityBudget(quality)) : 0;
-  }, [celestialSystems, activeSystemId, quality]);
   const constellationGlyphs = useMemo(() => projectTravelConstellationGlyphs(constellationGlyphIndex, activeSystemId, travel, travel?.startedAt ?? 0), [constellationGlyphIndex, activeSystemId, travel]);
   const ambientFlightPoints: AmbientFlightTrailPoint[] = [
     ...(localSystem.star ? [{ id: `star:${localSystem.star.physical.id}`, position: [0, 0, 0] as [number, number, number] }] : []),
@@ -189,9 +184,13 @@ export function SceneViewport({ camera, onCameraChange, star, planets, gates, ac
       data-celestial-map-system-count={celestialMap.length}
       data-celestial-map-active-system={activeSystemId}
        data-celestial-map-render-profile={quality.name}
-       data-celestial-diffraction-candidate-count={diffractionCandidateCount}
            data-constellation-glyph-count={constellationGlyphs.length}
            data-constellation-glyph-ids={constellationGlyphs.map((glyph) => glyph.constellationId).join(",")}
+           data-constellation-spike-star-count={constellationGlyphs.reduce((total, glyph) => total + glyph.nodes.filter((node) => node.opacity > 0.001).length, 0)}
+           data-constellation-spikes-per-star={GLYPH_STAR_SPIKE_COUNT}
+           data-constellation-star-diameters={glyphStarDiameterRange(constellationGlyphs, quality.name)}
+           data-constellation-glyph-reach={glyphReachRange(constellationGlyphs)}
+           data-constellation-glyph-pens={glyphPenRange(constellationGlyphs)}
           data-celestial-preview-arc-count={previewEdges.length}
       data-jump-preview-system-ids={previewSystems.map((system) => system.id).join(",") || undefined}
          data-jump-preview-edges={previewEdges.map((edge) => edge.join(":" )).join(",") || undefined}
@@ -324,11 +323,11 @@ function GateMarker({ gate, active, onActivate, onHoverChange, segments, groupRe
       </mesh>
       <mesh raycast={() => null}>
         <coneGeometry args={[0.2, 0.72, Math.max(6, Math.floor(segments / 2))]} />
-        <meshBasicMaterial color={active ? "#ffe0a1" : "#8fbce8"} transparent opacity={0.92} depthWrite={false} />
+        <meshBasicMaterial color={active ? SCENE_PALETTE.gate.active : SCENE_PALETTE.gate.idle} transparent opacity={0.92} depthWrite={false} />
       </mesh>
       <mesh raycast={() => null} rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[0.34, 0.035, Math.max(6, Math.floor(segments / 2)), segments]} />
-        <meshBasicMaterial color={active ? "#ffe0a1" : "#8fbce8"} transparent opacity={0.72} depthWrite={false} />
+        <meshBasicMaterial color={active ? SCENE_PALETTE.gate.active : SCENE_PALETTE.gate.idle} transparent opacity={0.72} depthWrite={false} />
       </mesh>
     </group>
   );
@@ -429,6 +428,7 @@ function Planets({ planets, subdued, quality, travelling }: { planets: LocalSyst
 function Planet({ planet, trailPlanets, subdued, quality, markerRefs }: { planet: LocalSystemProjection["planets"][number]; trailPlanets: OrbitTrailPlanet[]; subdued: boolean; quality: RenderQuality; markerRefs: MutableRefObject<Map<number, Mesh>> }): ReactNode {
   const position = new Vector3(...planet.scenePosition);
   const trail = calculateOrbitTrail(toOrbitTrailPlanet(planet), trailPlanets, quality.trailSegments);
+  const appearance = planetAppearance(planet.physical.typeId);
 
   return (
     <>
@@ -436,10 +436,10 @@ function Planet({ planet, trailPlanets, subdued, quality, markerRefs }: { planet
         {planet.sceneRadius > 0 && (
           <mesh scale={planet.sceneRadius}>
             <sphereGeometry args={[1, quality.planetSegments, quality.planetSegments]} />
-            <meshStandardMaterial color="#7185a3" emissive="#18243a" emissiveIntensity={subdued ? 0.12 : 0.3} roughness={0.9} transparent opacity={subdued ? 0.45 : 1} />
+            <meshStandardMaterial color={appearance.surface} emissive={appearance.emissive} emissiveIntensity={subdued ? 0.12 : 0.3} roughness={0.9} transparent opacity={subdued ? 0.45 : 1} />
           </mesh>
         )}
-        <PlanetMarker id={planet.physical.id} subdued={subdued} segments={quality.planetMarkerSegments} markerRefs={markerRefs} />
+        <PlanetMarker id={planet.physical.id} color={appearance.marker} subdued={subdued} segments={quality.planetMarkerSegments} markerRefs={markerRefs} />
       </group>
       <OrbitTrail trail={trail} subdued={subdued} />
       <OrbitContext orbit={planet.orbit} segments={quality.orbitSegments} />
@@ -453,7 +453,7 @@ function OrbitTrail({ trail, subdued }: { trail: ReturnType<typeof calculateOrbi
       <bufferGeometry>
         <bufferAttribute attach="attributes-position" args={[new Float32Array(trail.points.flat()), 3]} />
       </bufferGeometry>
-      <lineBasicMaterial color="#8fbce8" transparent opacity={subdued ? trail.opacity * 0.45 : trail.opacity} depthWrite={false} />
+      <lineBasicMaterial color={SCENE_PALETTE.orbit.trail} transparent opacity={subdued ? trail.opacity * 0.45 : trail.opacity} depthWrite={false} />
     </line>
   );
 }
@@ -463,12 +463,12 @@ function OrbitContext({ orbit, segments }: { orbit: LocalSystemProjection["plane
   return (
     <mesh quaternion={new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), new Vector3(...orbit.sceneNormal))} scale={[semiMajorAxis, semiMinorAxis, 1]}>
       <ringGeometry args={[0.994, 1.006, segments]} />
-      <meshBasicMaterial color="#789cc4" transparent opacity={0.28} side={2} depthWrite={false} />
+      <meshBasicMaterial color={SCENE_PALETTE.orbit.context} transparent opacity={0.24} side={2} depthWrite={false} />
     </mesh>
   );
 }
 
-function PlanetMarker({ id, subdued, segments, markerRefs }: { id: number; subdued: boolean; segments: number; markerRefs: MutableRefObject<Map<number, Mesh>> }): ReactNode {
+function PlanetMarker({ id, color, subdued, segments, markerRefs }: { id: number; color: string; subdued: boolean; segments: number; markerRefs: MutableRefObject<Map<number, Mesh>> }): ReactNode {
   return (
     <mesh
       ref={(mesh) => {
@@ -477,7 +477,7 @@ function PlanetMarker({ id, subdued, segments, markerRefs }: { id: number; subdu
       }}
     >
       <sphereGeometry args={[1, segments, Math.max(4, Math.floor(segments / 2))]} />
-      <meshBasicMaterial color="#d9ecff" transparent opacity={PLANET_MARKER_BASE_OPACITY * (subdued ? 0.45 : 1)} depthWrite={false} />
+      <meshBasicMaterial color={color} transparent opacity={PLANET_MARKER_BASE_OPACITY * (subdued ? 0.45 : 1)} depthWrite={false} />
     </mesh>
   );
 }
@@ -677,24 +677,6 @@ function CameraRig({ camera, reducedMotion }: { camera: CameraState; reducedMoti
   return null;
 }
 
-export function dampCameraState(current: CameraState, target: CameraState, delta: number): CameraState {
-  const interpolation = 1 - Math.exp(-CAMERA_DAMPING * delta);
-  return {
-    azimuth: current.azimuth + (target.azimuth - current.azimuth) * interpolation,
-    elevation: current.elevation + (target.elevation - current.elevation) * interpolation,
-    distance: current.distance + (target.distance - current.distance) * interpolation,
-  };
-}
-
-export function orbitCameraPosition({ azimuth, elevation, distance }: CameraState, position = new Vector3()): Vector3 {
-  const horizontal = Math.cos(elevation) * distance;
-  return position.set(
-    Math.sin(azimuth) * horizontal,
-    Math.sin(elevation) * distance,
-    Math.cos(azimuth) * horizontal,
-  );
-}
-
 function projectGates(gates: LocalSystemProjection["gates"], celestialMap: ReturnType<typeof projectCelestialMap>): DisplayGate[] {
   return gates.map((gate) => ({
     ...gate,
@@ -834,6 +816,31 @@ function BackgroundStars({ field }: { field: DecorativeStarField }): ReactNode {
   );
 }
 
+// The narrowest and widest Glyph Star in the sky, in CSS pixels, so that a star growing as the
+// observer comes closer is something a test can read rather than a difference between two
+// screenshots. A sky holding one glyph at one distance legitimately reports the same twice.
+function glyphStarDiameterRange(glyphs: ReturnType<typeof projectTravelConstellationGlyphs>, profile: RenderQuality["name"]): string {
+  const diameters = glyphs.flatMap((glyph) => glyph.nodes.filter((node) => node.opacity > 0.001).map((node) => glyphStarDiameter(node.distance, profile)));
+  return diameters.length === 0 ? "" : `${Math.min(...diameters).toFixed(1)}:${Math.max(...diameters).toFixed(1)}`;
+}
+
+// The smallest and largest figure in the sky, as multiples of their own constellation's radius, so
+// that a figure drawn the size of its stars is something a test can read. Both halves report the
+// same number, because that is the promise: a figure is framed out to one fixed multiple, whatever
+// constellation it stands in and wherever the observer is.
+function glyphReachRange(glyphs: ReturnType<typeof projectTravelConstellationGlyphs>): string {
+  const reaches = glyphs.filter((glyph) => glyph.reach > 0).map((glyph) => glyph.reach);
+  return reaches.length === 0 ? "" : `${Math.min(...reaches).toFixed(2)}:${Math.max(...reaches).toFixed(2)}`;
+}
+
+// The finest and the boldest Glyph Pen in the sky, so that a figure standing small being drawn with
+// a thinner line - and not with the same 16-pixel halo a figure filling the sky gets - is something
+// a test can read.
+function glyphPenRange(glyphs: ReturnType<typeof projectTravelConstellationGlyphs>): string {
+  const pens = glyphs.filter((glyph) => glyph.strokes.length > 0).map((glyph) => glyph.pen);
+  return pens.length === 0 ? "" : `${Math.min(...pens).toFixed(2)}:${Math.max(...pens).toFixed(2)}`;
+}
+
 function CelestialMap({ systems, activeSystemId, travel, constellationGlyphIndex, constellationGlyphs, previewEdges, previewLeaving, quality, reducedMotion, snapshotTime }: { systems: UniverseIndex["systems"]; activeSystemId: number; travel: TravelFrame | null; constellationGlyphIndex: ReturnType<typeof compileConstellationGlyphIndex>; constellationGlyphs: ReturnType<typeof projectTravelConstellationGlyphs>; previewEdges: [number, number][]; previewLeaving: boolean; quality: RenderQuality; reducedMotion: boolean; snapshotTime: number | null }): ReactNode {
   const sphere = useRef<Group>(null);
   const projectedMarkers = useMemo(
@@ -846,7 +853,7 @@ function CelestialMap({ systems, activeSystemId, travel, constellationGlyphIndex
 
   return (
     <group ref={sphere}>
-      <ConstellationGlyphs index={constellationGlyphIndex} activeSystemId={activeSystemId} travel={travel} glyphs={constellationGlyphs} quality={quality} />
+      <ConstellationGlyphs index={constellationGlyphIndex} activeSystemId={activeSystemId} travel={travel} glyphs={constellationGlyphs} quality={quality} reducedMotion={reducedMotion} snapshotTime={snapshotTime} />
       <BattleBeaconOverlay systems={systems} activeSystemId={activeSystemId} travel={travel} quality={quality} reducedMotion={reducedMotion} snapshotTime={snapshotTime} />
       <CelestialStarField systems={systems} activeSystemId={activeSystemId} travel={travel} quality={quality} />
       {previewArcs.map(({ edge, from, to }) => <CelestialPreviewArc from={from} to={to} leaving={previewLeaving} key={edge.join(":")} />)}
@@ -871,7 +878,7 @@ function CelestialPreviewArc({ from, to, leaving }: { from: [number, number, num
       <bufferGeometry>
         <bufferAttribute attach="attributes-position" args={[new Float32Array(points.flatMap((point) => point.toArray())), 3]} />
       </bufferGeometry>
-      <lineBasicMaterial ref={material} color="#d5a462" transparent opacity={0.74} depthWrite={false} />
+      <lineBasicMaterial ref={material} color={SCENE_PALETTE.route.arc} transparent opacity={0.74} depthWrite={false} />
     </line>
   );
 }
@@ -894,7 +901,7 @@ function GatePreviewConnection({ gate, destination, leaving }: { gate: DisplayGa
       <bufferGeometry ref={geometry}>
         <bufferAttribute attach="attributes-position" args={[positions.current, 3]} />
       </bufferGeometry>
-      <lineBasicMaterial ref={material} color="#ffe0a1" transparent opacity={0.92} depthTest={false} depthWrite={false} />
+      <lineBasicMaterial ref={material} color={SCENE_PALETTE.route.connection} transparent opacity={0.92} depthTest={false} depthWrite={false} />
     </line>
   );
 }

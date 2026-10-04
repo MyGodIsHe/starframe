@@ -3,19 +3,15 @@ import { distanceCueBrightness, OBSERVER_FADE_DISTANCE, type InterstellarSystem 
 import { desaturateTowardWhite, spectralClassColor } from "./spectralClass";
 import type { Vector3 } from "./universe/generateUniverse";
 
-export type StarFieldSystem = InterstellarSystem & { spectralClass: string; radius: number };
+export type StarFieldSystem = InterstellarSystem & { spectralClass: string };
 
-// Narrows a full RenderQuality profile down to only the fields this module needs, in one place, so
-// SpaceScene.tsx's diagnostic candidate count and CelestialStarField.tsx's renderer read the exact
-// same budget shape instead of two independently-maintained field lists.
-export function toStarFieldQualityBudget(quality: { starHaloMaxSize: number; starHaloIntensity: number; starHaloEdgeScaleMax: number; diffractionThreshold: number; diffractionSpriteSize: number; diffractionIntensity: number }): StarFieldQualityBudget {
+// Narrows a full RenderQuality profile down to only the fields the Celestial Star Field renderer
+// needs, so its model stays independent from the rest of the scene's quality controls.
+export function toStarFieldQualityBudget(quality: { starHaloMaxSize: number; starHaloIntensity: number; starHaloEdgeScaleMax: number }): StarFieldQualityBudget {
   return {
     haloMaxSize: quality.starHaloMaxSize,
     haloIntensity: quality.starHaloIntensity,
     haloEdgeScaleMax: quality.starHaloEdgeScaleMax,
-    diffractionThreshold: quality.diffractionThreshold,
-    diffractionSpriteSize: quality.diffractionSpriteSize,
-    diffractionIntensity: quality.diffractionIntensity,
   };
 }
 
@@ -23,13 +19,6 @@ export type StarFieldQualityBudget = {
   haloMaxSize: number;
   haloIntensity: number;
   haloEdgeScaleMax: number;
-  // See "Rare diffraction spikes" below: diffractionThreshold is where the Visible Brightness ramp
-  // starts, diffractionSpriteSize is the on-screen sprite diameter cap, diffractionIntensity is a
-  // 0-1 output multiplier a stricter profile (mobile) can use to dim the cue without moving the
-  // threshold that decides *which* stars qualify.
-  diffractionThreshold: number;
-  diffractionSpriteSize: number;
-  diffractionIntensity: number;
 };
 
 // Fixed physical thresholds (not a per-dataset min/max) so one irrelevant far or near system can
@@ -52,10 +41,20 @@ const HALO_SIZE_FAR_PX = 26;
 const HALO_WEIGHT_NEAR = 0.45;
 const HALO_WEIGHT_FAR = 1;
 
+// Every Celestial Map star is drawn at four fifths of the brightness its Distance Cue asks for.
+// The sky a Constellation Glyph stands in front of is also the sky its own Glyph Stars have to be
+// read against, and at full strength the field of ordinary stars - thousands of them, each with a
+// halo that sums with its neighbours' - carries enough light to flatten that difference. Dimming
+// the whole field by one factor keeps the Distance Cue's near/far story exactly as it was: every
+// star loses the same fifth, so none of them trades places with another. The procedural background
+// stars are dimmed by this same factor (see DECORATIVE_STAR_MAX_OPACITY in SpaceScene.tsx), so
+// Minimum Map Brightness still reads above them and every real Solar System stays distinguishable.
+export const BACKGROUND_STAR_DIMMING = 0.8;
+
 // A perspective projection spreads a fixed solid angle over screen area proportional to
 // 1 / cos(theta)^3. Scaling a round halo diameter by cos(theta)^-1.5 preserves its coverage and
-// therefore its additive overlap as it moves away from the optical axis. Core and diffraction
-// remain fixed-size screen cues; only the density-forming halo needs this compensation.
+// therefore its additive overlap as it moves away from the optical axis. The core remains a
+// fixed-size screen cue; only the density-forming halo needs this compensation.
 export const PERSPECTIVE_HALO_SCALE_EXPONENT = 1.5;
 
 export function computePerspectiveHaloScale(viewCosine: number, maxScale: number): number {
@@ -98,17 +97,15 @@ function clamp(value: number, min: number, max: number): number {
 export function computeStarVisualAttributes(distance: number, intensity: number, quality: StarFieldQualityBudget, out: StarVisualAttributes = { coreSize: 0, coreOpacity: 0, haloSize: 0, haloOpacity: 0 }): StarVisualAttributes {
   const t = distanceMix(distance);
   out.coreSize = lerp(CORE_SIZE_NEAR_PX, CORE_SIZE_FAR_PX, t);
-  out.coreOpacity = intensity * lerp(CORE_WEIGHT_NEAR, CORE_WEIGHT_FAR, t);
+  out.coreOpacity = intensity * lerp(CORE_WEIGHT_NEAR, CORE_WEIGHT_FAR, t) * BACKGROUND_STAR_DIMMING;
   out.haloSize = Math.min(quality.haloMaxSize, lerp(HALO_SIZE_NEAR_PX, HALO_SIZE_FAR_PX, t));
-  out.haloOpacity = intensity * lerp(HALO_WEIGHT_NEAR, HALO_WEIGHT_FAR, t) * quality.haloIntensity;
+  out.haloOpacity = intensity * lerp(HALO_WEIGHT_NEAR, HALO_WEIGHT_FAR, t) * quality.haloIntensity * BACKGROUND_STAR_DIMMING;
   return out;
 }
 
 // Core keeps the full spectral hue; halo is desaturated so overlapping halos in dense regions don't
-// paint a large sky area an aggressive color; diffraction desaturates further still, since the rare
-// spike cue should read as bright starlight, only faintly tinted by the source's temperature.
+// paint a large sky area an aggressive color.
 const HALO_COLOR_DESATURATION = 0.45;
-const DIFFRACTION_COLOR_DESATURATION = 0.75;
 
 export function createSpectralColorBuffer(systems: readonly Pick<StarFieldSystem, "spectralClass">[], desaturation = 0): Float32Array {
   const colors = new Float32Array(systems.length * 3);
@@ -120,59 +117,12 @@ export function createHaloColorBuffer(systems: readonly Pick<StarFieldSystem, "s
   return createSpectralColorBuffer(systems, HALO_COLOR_DESATURATION);
 }
 
-export function createDiffractionColorBuffer(systems: readonly Pick<StarFieldSystem, "spectralClass">[]): Float32Array {
-  return createSpectralColorBuffer(systems, DIFFRACTION_COLOR_DESATURATION);
-}
-
-// Visible Brightness: a single per-star presentation cue for "how bright does this individual point
-// source look", used only to decide diffraction eligibility. It is a fixed function of a star's own
-// distance and its own SDE radius - never of neighbour count, halo accumulation or a framebuffer
-// read - so a dense cluster of dim stars can never trigger it and one irrelevant extreme system can
-// never change another star's value. Radius is a minimal, explicitly non-physical stand-in for
-// luminosity (the SDE has no luminosity field): REFERENCE_STAR_RADIUS_METERS is a fixed constant
-// close to the real SDE median star radius (~309,300,000 m across all 8,089 systems), not a
-// per-dataset min/max, so the factor is stable if systems are added or removed. The factor is
-// clamped to a fixed range for the same reason distance thresholds are fixed elsewhere in this
-// module - it bounds the presentation, it does not normalize against the current dataset.
-export const REFERENCE_STAR_RADIUS_METERS = 300_000_000;
-const MIN_RADIUS_FACTOR = 0.3;
-const MAX_RADIUS_FACTOR = 8;
-
-function starRadiusFactor(radius: number): number {
-  if (!Number.isFinite(radius) || radius <= 0) return 1;
-  return clamp(radius / REFERENCE_STAR_RADIUS_METERS, MIN_RADIUS_FACTOR, MAX_RADIUS_FACTOR);
-}
-
-const MAX_VISIBLE_BRIGHTNESS = MAX_RADIUS_FACTOR;
-
-export function computeVisibleBrightness(distance: number, radius: number): number {
-  const opacity = Math.min(1, distance / OBSERVER_FADE_DISTANCE);
-  return clamp(distanceCueBrightness(distance) * opacity * starRadiusFactor(radius), 0, MAX_VISIBLE_BRIGHTNESS);
-}
-
-// Rare diffraction spikes: a fixed Visible Brightness threshold, chosen against the real SDE radius
-// distribution so that, universe-wide, only the largest ~0.5% of stars ever reach full spike
-// intensity - see CelestialStarField.tsx and the final report for the measured candidate counts.
-// The smoothstep width is fixed (not per-quality) so every profile shares the same steep ramp shape;
-// only where that ramp sits (diffractionThreshold) and how strongly it reads (diffractionIntensity)
-// differ per RenderQuality profile. This never reads density, halo accumulation or dataset extremes -
-// only the star's own Visible Brightness - so a bright star crosses it and a dim one never does,
-// regardless of how many neighbours surround either one.
-const DIFFRACTION_SMOOTH_WIDTH = 0.9;
-
-export function computeDiffractionIntensity(visibleBrightness: number, quality: Pick<StarFieldQualityBudget, "diffractionThreshold" | "diffractionIntensity">): number {
-  const low = quality.diffractionThreshold - DIFFRACTION_SMOOTH_WIDTH / 2;
-  const high = quality.diffractionThreshold + DIFFRACTION_SMOOTH_WIDTH / 2;
-  return smoothstep(low, high, visibleBrightness) * quality.diffractionIntensity;
-}
-
 export type StarFieldBuffers = {
   readonly positions: Float32Array;
   readonly coreSizes: Float32Array;
   readonly coreOpacities: Float32Array;
   readonly haloSizes: Float32Array;
   readonly haloOpacities: Float32Array;
-  readonly diffractionIntensities: Float32Array;
 };
 
 export function createStarFieldBuffers(count: number): StarFieldBuffers {
@@ -182,12 +132,11 @@ export function createStarFieldBuffers(count: number): StarFieldBuffers {
     coreOpacities: new Float32Array(count),
     haloSizes: new Float32Array(count),
     haloOpacities: new Float32Array(count),
-    diffractionIntensities: new Float32Array(count),
   };
 }
 
 // The single per-frame pass over every real Solar System: computes direction, physical distance,
-// Distance Cue, visual attributes and diffraction eligibility together, and writes straight into the
+// Distance Cue and visual attributes together, and writes straight into the
 // reused typed arrays. Deliberately duplicates interstellarProjection.ts's Distance Cue formula call
 // instead of calling projectInterstellarProjection, which would allocate a marker object and a
 // direction array per system on every Stargate travel frame - see celestialStarFieldModel.test.ts's
@@ -217,23 +166,5 @@ export function writeStarFieldFrame(systems: readonly StarFieldSystem[], observe
     buffers.coreOpacities[index] = scratch.coreOpacity;
     buffers.haloSizes[index] = scratch.haloSize;
     buffers.haloOpacities[index] = scratch.haloOpacity;
-
-    buffers.diffractionIntensities[index] = computeDiffractionIntensity(computeVisibleBrightness(distance, system.radius), quality);
   }
-}
-
-// Diagnostic count of how many systems currently clear the diffraction threshold at all (any
-// nonzero intensity), independent of the renderer - see CelestialStarField.tsx's use as a `data-*`
-// attribute for Playwright coverage without exposing shader internals to production UI.
-export function countDiffractionCandidates(systems: readonly StarFieldSystem[], observerPosition: Vector3, quality: StarFieldQualityBudget): number {
-  const [observerX, observerY, observerZ] = observerPosition;
-  let count = 0;
-  for (const system of systems) {
-    const dx = system.position[0] - observerX;
-    const dy = system.position[1] - observerY;
-    const dz = system.position[2] - observerZ;
-    const distance = Math.hypot(dx, dy, dz);
-    if (computeDiffractionIntensity(computeVisibleBrightness(distance, system.radius), quality) > 0) count += 1;
-  }
-  return count;
 }

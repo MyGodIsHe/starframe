@@ -110,8 +110,8 @@ export function generateUniverse(records: SdeRecord[], metadata: UniverseMetadat
         })),
       })),
       // Duplicates the star's spectralClass and radius onto the whole-sky index (not just its
-      // per-system resource) so the Celestial Map can compute spectral tint and Visible Brightness
-      // for all 8,089 systems without fetching an individual system resource per star.
+      // per-system resource), keeping whole-sky presentation data available without fetching an
+      // individual system resource per star.
       systems: systems.map(({ kind: _, ...system }) => ({ ...system, spectralClass: starBySystemId.get(system.id)!.spectralClass, radius: starBySystemId.get(system.id)!.radius })),
       edges: edges.sort((left, right) => left.systems[0] - right.systems[0] || left.systems[1] - right.systems[1]),
       startSystemId: systemById.has(AMARR_SYSTEM_ID) ? AMARR_SYSTEM_ID : systems[0]?.id ?? fail("SDE contains no systems"),

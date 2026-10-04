@@ -43,7 +43,26 @@ body { margin: 0; min-width: 320px; }
 .constellation-symbol p:first-child { color: #d8e7f8; font-size: 0.78rem; }
 .constellation-symbol p:nth-child(2) { color: #d5a462; text-transform: uppercase; }
 
+.sigil-figure { min-height: 100dvh; overflow: hidden; position: relative; }
+/* The workshop reads its own figure facts while turning it, so they stay above the canvas. */
+.sigil-figure .physical-scale { z-index: 1; }
+.sigil-figure .physical-scale code { color: #d9ecff; font-size: 0.62rem; overflow-wrap: anywhere; }
+
+.sigil-controls { background: rgb(6 12 22 / 72%); border-left: 1px solid #728eae; bottom: 4rem; left: clamp(1rem, 3vw, 3rem); margin: 0; padding: 0.6rem 0.8rem; position: absolute; width: min(19rem, 48vw); z-index: 1; }
+.sigil-controls p:first-child { color: #d5a462; font-size: 0.65rem; letter-spacing: 0.14em; margin: 0 0 0.5rem; text-transform: uppercase; }
+.sigil-controls button { background: none; border: 1px solid #6e9cc8; color: #d9ecff; cursor: pointer; font: inherit; font-size: 0.72rem; letter-spacing: 0.06em; padding: 0.4rem 0.6rem; width: 100%; }
+.sigil-controls button[aria-pressed="true"] { background: rgb(110 156 200 / 18%); border-color: #ffe0a1; color: #ffe0a1; }
+.sigil-controls button:focus-visible { outline: 2px solid #ffe0a1; outline-offset: 0.2rem; }
+.sigil-controls__note { color: #8fa0b5; font-size: 0.65rem; letter-spacing: 0.04em; line-height: 1.5; margin: 0.5rem 0 0; }
+.sigil-controls__figures { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.sigil-controls__figures a { color: #9caabd; font-size: 0.68rem; letter-spacing: 0.08em; text-decoration: none; text-transform: uppercase; }
+.sigil-controls__figures a[aria-current] { color: #d5a462; }
+
 .interaction-hint { bottom: 1.5rem; color: #8190a5; font-size: 0.75rem; left: 50%; letter-spacing: 0.05em; margin: 0; pointer-events: none; position: absolute; text-transform: uppercase; transform: translateX(-50%); white-space: nowrap; }
+.repository-link { align-items: center; background: rgb(6 12 22 / 72%); border-left: 1px solid #728eae; bottom: 1.5rem; color: #aebed1; display: inline-flex; font-size: 0.65rem; gap: 0.45rem; left: clamp(1rem, 3vw, 3rem); letter-spacing: 0.08em; padding: 0.45rem 0.7rem; position: absolute; text-decoration: none; z-index: 1; }
+.repository-link:hover { border-left-color: #ffe0a1; color: #ffe0a1; }
+.repository-link:focus-visible { outline: 2px solid #ffe0a1; outline-offset: 0.2rem; }
+.repository-link svg { flex: none; }
 .data-attribution { bottom: 1.5rem; color: #627085; font-size: 0.6rem; margin: 0; position: absolute; right: clamp(1rem, 3vw, 3rem); text-align: right; width: min(25rem, 45vw); }
 
 .screen-reader-status, .screen-reader-only { height: 1px; overflow: hidden; position: absolute; width: 1px; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
@@ -68,4 +87,6 @@ body { margin: 0; min-width: 320px; }
   .system-hud { top: 1.5rem; }
   .interaction-hint { bottom: 1rem; font-size: 0.65rem; }
   .data-attribution { bottom: 2.25rem; font-size: 0.55rem; width: 16rem; }
+  .repository-link { bottom: 1rem; padding: 0.4rem; }
+  .repository-link span { display: none; }
 }

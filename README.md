@@ -1,13 +1,39 @@
 # Starframe
 
-Starframe is an experimental, interactive map of New Eden. It combines an
-EVE Online solar-system view with a camera-centred celestial map, real SDE
-positions, orbital geometry, stargate travel, constellation glyphs, and
-deterministic ambient activity.
+Starframe is an experimental, interactive map of New Eden built from official
+EVE Online static data. Explore solar systems, look across the surrounding sky,
+and travel through the stargate network.
 
 [Open the live demo](https://mygodishe.github.io/starframe/)
 
-![Starframe showing the Amarr system and celestial map](tests/local-system.spec.ts-snapshots/celestial-map-chromium-win32.png)
+![Starframe showing the Amarr system and celestial map](docs/screenshot-amarr.png)
+
+## Features
+
+- Solar systems positioned and scaled from the EVE Online Static Data Export
+- Stars, planets, orbital paths, and stargates shown in each local system
+- A celestial map of New Eden with constellation glyphs
+- Stargate destinations, route previews, and animated travel between systems
+- Deterministic ambient flights and battle activity across the map
+- Desktop, touch, reduced-motion, and lower-power rendering profiles
+
+Starframe is a visualisation rather than a tactical or live-intelligence tool.
+Its ambient activity is simulated and does not represent events from EVE
+Online.
+
+## Controls
+
+- Drag to orbit around the current system.
+- Scroll or pinch to change distance.
+- Hover or focus a stargate to preview its destination and onward route.
+- Select a stargate to travel to the connected system.
+
+## Sigil Figures
+
+Constellations are marked by sculpted figures designed to remain recognisable
+from different viewpoints. The separate
+[Sigil Figure gallery](https://mygodishe.github.io/starframe/sigil.html) lets you
+inspect each figure in isolation and move the observer around it.
 
 ## Requirements
 
@@ -22,47 +48,29 @@ npm ci
 npm run dev
 ```
 
-The development server prints its local URL. The application loads the
-generated universe dataset from `public/data/`.
+The development server prints the local URL for the map. The Sigil Figure
+gallery is available at `/sigil.html`.
 
 ## Checks
 
 ```sh
-npm run lint
-npm run typecheck
-npm test
-npm run build
+npm run check
 npm run test:e2e
 ```
 
-`test:e2e` builds the production application and runs the Playwright suite in
-desktop and mobile Chromium profiles. Install the browser once with
-`npx playwright install chromium` if it is not already available.
+Install the Playwright browser once with `npx playwright install chromium` if
+it is not already available.
 
-## Static Data Export
+## Data
 
-The checked-in dataset was generated from the official EVE Online JSON Lines
-Static Data Export. Its build, source URL, and format are recorded in
-`sde.config.json`.
-
-To regenerate it after downloading and extracting an SDE archive:
-
-```sh
-npm run generate:sde -- \
-  --input path/to/extracted-sde \
-  --build 3503375 \
-  --generated-at 2026-09-10T11:09:04Z \
-  --source https://developers.eveonline.com/static-data/tranquility/eve-online-static-data-3503375-jsonl.zip
-```
-
-The generator writes per-system resources to `public/data/systems/` and the
-universe index to both `public/data/universe-index.json` and
-`src/data/universe-index.json`. The source copy is used by integration tests.
+The checked-in universe dataset was generated from the official EVE Online
+JSON Lines Static Data Export. Its build, source URL, and format are recorded
+in [`sde.config.json`](sde.config.json).
 
 ## Project Status
 
-Starframe is an experimental visualisation, not a tactical tool. Interfaces,
-rendering details, and generated data may change between commits.
+Starframe is experimental. Its interface, visual design, and generated data
+may change between commits.
 
 ## Contributing
 

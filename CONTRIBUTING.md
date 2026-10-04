@@ -21,9 +21,11 @@ remain compatible with the EVE Online Developer License Agreement.
 5. Run `npm run check` and `npm run test:e2e`.
 6. Open a pull request explaining the user-visible change and its verification.
 
-Visual changes should include intentional Playwright snapshot updates for each
-supported platform. Avoid updating snapshots to hide unexplained rendering
-differences.
+The Playwright suite asserts on what the scene reports about itself through its
+`data-*` attributes rather than on committed reference images, so a rendering
+change should be covered by an attribute the scene already publishes, or by a
+new one added alongside it. Do not reintroduce pixel snapshots: they have to be
+regenerated per platform and a software WebGL renderer makes them unreliable.
 
 ## Commit and Pull Request Scope
 

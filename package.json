@@ -28,6 +28,7 @@
     "test": "vitest run",
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "generate:sde": "tsx scripts/generate-sde.ts",
+    "generate:sigils": "tsx scripts/generate-sigil-assignments.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
@@ -37,6 +38,7 @@
     "three": "^0.180.0"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^24.3.1",

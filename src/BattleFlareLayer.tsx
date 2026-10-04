@@ -2,6 +2,7 @@ import { useFrame } from "@react-three/fiber";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, type Mesh, type MeshBasicMaterial, Points, PointsMaterial } from "three";
 import { eventOffset, eventsAliveAt, explosionPhaseAt } from "./battleExplosions";
+import { SHOCKWAVE_FADE_EXPONENT, battleShockwaveFront } from "./battleShockwave";
 import { battleClockNow, getBattleState, getBattleWindow, selectBattleAnchors, type BattleAnchor, type BattleTier, type BattleWindow } from "./battleSimulation";
 import { glowSpriteTexture } from "./glowSprite";
 import type { RenderQuality } from "./renderQuality";
@@ -138,8 +139,12 @@ function BattleAnchorFlare({ window, anchor, anchorIndex, quality, reducedMotion
       mesh.visible = true;
       mesh.position.set(...assigned.position);
       const maxRadius = spreadRadius * (0.6 + assigned.magnitude * 0.9);
-      mesh.scale.setScalar(lerp(spreadRadius * 0.12, maxRadius, assigned.progress));
-      (mesh.material as MeshBasicMaterial).opacity = (1 - assigned.progress) * WAVE_PEAK_OPACITY[window.tier];
+      // The same decelerating front and the same fade the sky's Battle Shockwave expands on (see
+      // battleShockwave.ts), so one ship's death unfolds at one speed whether it is watched from
+      // inside the system or from a Battle Beacon light years away.
+      const front = battleShockwaveFront(assigned.progress);
+      mesh.scale.setScalar(maxRadius * front.radius);
+      (mesh.material as MeshBasicMaterial).opacity = Math.pow(1 - assigned.progress, SHOCKWAVE_FADE_EXPONENT) * WAVE_PEAK_OPACITY[window.tier];
     }
 
     if (glowBucket) {
@@ -214,10 +219,6 @@ function writeGlowBucket(bucket: GlowBucket, contributions: readonly GlowContrib
 function disposeGlowBucket(bucket: GlowBucket): void {
   bucket.points.geometry.dispose();
   (bucket.points.material as PointsMaterial).dispose();
-}
-
-function lerp(min: number, max: number, t: number): number {
-  return min + (max - min) * t;
 }
 
 function sameWindow(left: BattleWindow | null, right: BattleWindow | null): boolean {

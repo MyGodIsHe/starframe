@@ -2,7 +2,6 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { AdditiveBlending, BufferAttribute, BufferGeometry, DynamicDrawUsage, NormalBlending, Points, ShaderMaterial } from "three";
 import {
-  createDiffractionColorBuffer,
   createHaloColorBuffer,
   createSpectralColorBuffer,
   createStarFieldBuffers,
@@ -91,71 +90,19 @@ const HALO_FRAGMENT_SHADER = `
   }
 `;
 
-// Rare diffraction spikes on the brightest individual stars. diffractionIntensity is precomputed
-// per-star on the CPU (see celestialStarFieldModel.ts's computeDiffractionIntensity, driven purely
-// by that star's own Visible Brightness) so the vertex shader only has to zero out ineligible stars'
-// point size - no raster cost for a star below threshold, and no dynamic top-N reordering that would
-// flicker during travel.
-const DIFFRACTION_VERTEX_SHADER = `
-  uniform float uPixelRatio;
-  uniform float uSpriteSize;
-  attribute vec3 diffractionColor;
-  attribute float diffractionIntensity;
-  varying vec3 vColor;
-  varying float vIntensity;
-
-  void main() {
-    vColor = diffractionColor;
-    vIntensity = diffractionIntensity;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = diffractionIntensity > 0.001 ? uSpriteSize * uPixelRatio : 0.0;
-  }
-`;
-
-// A compact center glow plus two thin rays along one fixed screen-space axis (45 degrees), with a
-// soft round edge so the sprite never shows a square border. A single scene-wide orientation reads as
-// one coherent optical cue and is visually quieter than jittering each star's rays independently -
-// see celestialStarFieldModel.test.ts and the final report for that decision. sin/cos of 45 degrees.
-const DIFFRACTION_FRAGMENT_SHADER = `
-  varying vec3 vColor;
-  varying float vIntensity;
-
-  const float AXIS = 0.7071067811865476;
-
-  void main() {
-    if (vIntensity <= 0.001) discard;
-    vec2 centered = (gl_PointCoord - vec2(0.5)) * 2.0;
-    float radius = length(centered);
-    float edgeFade = 1.0 - smoothstep(0.82, 1.0, radius);
-    if (edgeFade <= 0.001) discard;
-
-    vec2 axis = vec2(AXIS * centered.x - AXIS * centered.y, AXIS * centered.x + AXIS * centered.y);
-    float core = exp(-radius * radius * 26.0);
-    float rayA = exp(-abs(axis.y) * 42.0) * exp(-abs(axis.x) * 2.4);
-    float rayB = exp(-abs(axis.x) * 42.0) * exp(-abs(axis.y) * 2.4);
-
-    float intensity = (core + (rayA + rayB) * 0.6) * edgeFade * vIntensity;
-    if (intensity <= 0.001) discard;
-    gl_FragColor = vec4(vColor, intensity);
-  }
-`;
-
 type RenderState = {
   geometry: BufferGeometry;
   core: Points;
   halo: Points;
-  diffraction: Points;
   coreMaterial: ShaderMaterial;
   haloMaterial: ShaderMaterial;
-  diffractionMaterial: ShaderMaterial;
   buffers: StarFieldBuffers;
 };
 
-// The Celestial Map's real-star layer: three GPU passes sharing one geometry - a sharp core, a soft
-// additive halo, and a rare additive diffraction spike on only the brightest individual stars - so
-// dense sky regions read as continuous light structure while individual stars stay crisp and only a
-// handful of the brightest ever grow spikes. See celestialStarFieldModel.ts for the per-star math
-// this component only adapts to R3F.
+// The Celestial Map's real-star layer: two GPU passes sharing one geometry - a sharp core and a soft
+// additive halo - so dense sky regions read as continuous light structure while individual stars
+// stay crisp. ConstellationGlyphs owns the eight-spike accent exclusively for stars in visible
+// glyphs. See celestialStarFieldModel.ts for the per-star math this component only adapts to R3F.
 export function CelestialStarField({ systems, activeSystemId, travel, quality }: {
   systems: readonly StarFieldSystem[];
   activeSystemId: number;
@@ -166,7 +113,7 @@ export function CelestialStarField({ systems, activeSystemId, travel, quality }:
   const dpr = useThree((state) => state.viewport.dpr);
   const qualityBudget = useMemo(
     () => toStarFieldQualityBudget(quality),
-    [quality.starHaloMaxSize, quality.starHaloIntensity, quality.starHaloEdgeScaleMax, quality.diffractionThreshold, quality.diffractionSpriteSize, quality.diffractionIntensity],
+    [quality.starHaloMaxSize, quality.starHaloIntensity, quality.starHaloEdgeScaleMax],
   );
 
   useLayoutEffect(() => {
@@ -180,13 +127,7 @@ export function CelestialStarField({ systems, activeSystemId, travel, quality }:
     renderState.coreMaterial.uniforms.uPixelRatio.value = dpr;
     renderState.haloMaterial.uniforms.uPixelRatio.value = dpr;
     renderState.haloMaterial.uniforms.uEdgeScaleMax.value = quality.starHaloEdgeScaleMax;
-    renderState.diffractionMaterial.uniforms.uPixelRatio.value = dpr;
   }, [dpr, quality.starHaloEdgeScaleMax, renderState]);
-
-  useEffect(() => {
-    if (!renderState) return;
-    renderState.diffractionMaterial.uniforms.uSpriteSize.value = quality.diffractionSpriteSize;
-  }, [quality.diffractionSpriteSize, renderState]);
 
   // Stationary frames only need one write (on mount, or when the active system or quality budget
   // changes); the continuous per-frame write below is reserved for active Stargate travel.
@@ -211,7 +152,6 @@ export function CelestialStarField({ systems, activeSystemId, travel, quality }:
     <>
       <primitive object={renderState.halo} />
       <primitive object={renderState.core} />
-      <primitive object={renderState.diffraction} />
     </>
   );
 }
@@ -220,7 +160,6 @@ function createRenderState(systems: readonly StarFieldSystem[]): RenderState {
   const buffers = createStarFieldBuffers(systems.length);
   const coreColors = createSpectralColorBuffer(systems);
   const haloColors = createHaloColorBuffer(systems);
-  const diffractionColors = createDiffractionColorBuffer(systems);
 
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(buffers.positions, 3).setUsage(DynamicDrawUsage));
@@ -230,16 +169,12 @@ function createRenderState(systems: readonly StarFieldSystem[]): RenderState {
   geometry.setAttribute("haloColor", new BufferAttribute(haloColors, 3));
   geometry.setAttribute("haloSize", new BufferAttribute(buffers.haloSizes, 1).setUsage(DynamicDrawUsage));
   geometry.setAttribute("haloOpacity", new BufferAttribute(buffers.haloOpacities, 1).setUsage(DynamicDrawUsage));
-  geometry.setAttribute("diffractionColor", new BufferAttribute(diffractionColors, 3));
-  geometry.setAttribute("diffractionIntensity", new BufferAttribute(buffers.diffractionIntensities, 1).setUsage(DynamicDrawUsage));
 
   const coreMaterial = createStarMaterial(CORE_VERTEX_SHADER, CORE_FRAGMENT_SHADER, false, { uPixelRatio: { value: 1 } });
   const haloMaterial = createStarMaterial(HALO_VERTEX_SHADER, HALO_FRAGMENT_SHADER, true, { uPixelRatio: { value: 1 }, uEdgeScaleMax: { value: 1 } });
-  const diffractionMaterial = createStarMaterial(DIFFRACTION_VERTEX_SHADER, DIFFRACTION_FRAGMENT_SHADER, true, { uPixelRatio: { value: 1 }, uSpriteSize: { value: 1 } });
 
-  // Halo, core, then diffraction, all just before the Constellation Glyph nodes (-20) and Battle
-  // Beacon glow points (-5) in the shared Celestial Map render-order stack (see SpaceScene.tsx) - the
-  // rare diffraction accent stays subordinate to glyphs, preview arcs and battle overlays.
+  // Halo and core sit behind Constellation Glyph nodes (-20) and Battle Beacon glow points (-5) in
+  // the shared Celestial Map render-order stack (see SpaceScene.tsx).
   const halo = new Points(geometry, haloMaterial);
   halo.frustumCulled = false;
   halo.renderOrder = -11;
@@ -248,11 +183,7 @@ function createRenderState(systems: readonly StarFieldSystem[]): RenderState {
   core.frustumCulled = false;
   core.renderOrder = -9;
 
-  const diffraction = new Points(geometry, diffractionMaterial);
-  diffraction.frustumCulled = false;
-  diffraction.renderOrder = -8;
-
-  return { geometry, core, halo, diffraction, coreMaterial, haloMaterial, diffractionMaterial, buffers };
+  return { geometry, core, halo, coreMaterial, haloMaterial, buffers };
 }
 
 function createStarMaterial(vertexShader: string, fragmentShader: string, additive: boolean, uniforms: Record<string, { value: number }>): ShaderMaterial {
@@ -275,12 +206,10 @@ function markFrameAttributesDirty(state: RenderState): void {
   attributes.coreOpacity.needsUpdate = true;
   attributes.haloSize.needsUpdate = true;
   attributes.haloOpacity.needsUpdate = true;
-  attributes.diffractionIntensity.needsUpdate = true;
 }
 
 function disposeRenderState(state: RenderState): void {
   state.geometry.dispose();
   state.coreMaterial.dispose();
   state.haloMaterial.dispose();
-  state.diffractionMaterial.dispose();
 }

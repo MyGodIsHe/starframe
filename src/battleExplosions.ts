@@ -10,8 +10,12 @@ export type ExplosionPhase = "flash" | "wave" | "scar";
 
 const TICK_DURATION_MS = 150;
 const FLASH_MS = 140;
-const WAVE_MIN_MS = 700;
-const WAVE_MAX_MS = 2_200;
+// How long a shockwave takes to cross its own reach, smallest ship to largest. It is deliberately
+// half the speed a blast first suggests: a front that crosses the sky in well under a second reads
+// as a pop, while one that takes a couple of seconds reads as something travelling - and it is the
+// travelling that tells the eye a ship died out there rather than a light having been switched on.
+const WAVE_MIN_MS = 1_400;
+const WAVE_MAX_MS = 4_400;
 const SCAR_MIN_MS = 10_000;
 const SCAR_MAX_MS = 28_000;
 const MAX_LIFECYCLE_MS = FLASH_MS + WAVE_MAX_MS + SCAR_MAX_MS;
