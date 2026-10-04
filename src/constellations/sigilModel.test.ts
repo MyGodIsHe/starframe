@@ -109,8 +109,19 @@ describe("the imported library", () => {
     expect(modelForFigure("cheese")).not.toBeNull();
     expect(modelForFigure("gear")).not.toBeNull();
     expect(modelForFigure("diamond")).not.toBeNull();
+    expect(modelForFigure("cross")).not.toBeNull();
+    expect(modelForFigure("biohazard")).not.toBeNull();
+    expect(modelForFigure("radiation")).not.toBeNull();
+    expect(modelForFigure("pacman")).not.toBeNull();
+    expect(modelForFigure("horseshoe")).not.toBeNull();
+    expect(modelForFigure("millet")).not.toBeNull();
+    expect(modelForFigure("snowflake")).not.toBeNull();
+    expect(modelForFigure("quake")).not.toBeNull();
     expect(modelForFigure("wolf")).toBeNull();
-    expect(SIGIL_MODELS.map((model) => model.name)).toEqual(["bolt", "atom", "ring", "hammer", "cheese", "gear", "diamond"]);
+    expect(SIGIL_MODELS.map((model) => model.name)).toEqual([
+      "bolt", "atom", "ring", "hammer", "cheese", "gear", "diamond", "cross",
+      "biohazard", "radiation", "pacman", "horseshoe", "millet", "snowflake", "quake",
+    ]);
   });
 
   it("keeps every body closed and inside the figure's own space", () => {

@@ -28,8 +28,8 @@ generated universe dataset from `public/data/`.
 `/sigil.html` is a second page: one Sigil Figure on its own, which you turn by
 walking the observer round it. It is where a figure's body is judged, because the
 only question that matters for a body is whether it reads from every side. It opens
-on the bolt and also holds the atom, the ring, the hammer, the wedge of cheese, the
-gear and the diamond - the seven figures this repository generates for itself - and
+on the bolt and also holds every figure this repository generates for itself - from
+the atom and ring to the biohazard sign, millet ear, snowflake and Quake rune - and
 any figure imported into the library appears beside them.
 
 ## Sigil Figures
@@ -39,8 +39,8 @@ far side for the glyph to hide. Every figure is therefore a sculpted model. Buil
 bodies out of flat line art was tried first and dropped: a drawing has to be given
 depth by rule, and every such rule is a guess about a shape nobody drew.
 
-A fresh clone has seven figures, and every Constellation wears one of them. All
-seven are generated, because each is a subject a rule describes exactly rather than
+A fresh clone has fifteen figures, and every Constellation wears one of them. All
+fifteen are generated, because each is a subject a rule describes exactly rather than
 approximately. The ring in `src/constellations/sigilRing.ts` is two radii and two
 counts. The atom in `src/constellations/sigilAtom.ts` is a core and two shells built
 out of that same tube, set square to each other so they cross at the widest angle
@@ -86,7 +86,7 @@ and the junctions under the girdle - are read off the planes of those facets rat
 than guessed, which is the difference between a stone and a cone with lines on it. It
 is the one convex body in the library: it never shows its own far side through itself,
 and what changes as a pilot travels is which of its creases face them.
-So none of them costs anybody's work. Every other subject needs a model, and **no
+So none of them costs anybody's work. A subject that no compact rule describes needs a model, and **no
 imported model is committed to this repository** - a model is somebody else's sculpture, and whether
 it may be redistributed is their decision rather than a star map's. Importing one is
 therefore a step each build takes for itself, over a model it has the right to use:
